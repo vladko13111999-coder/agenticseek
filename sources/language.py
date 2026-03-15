@@ -62,7 +62,11 @@ class LanguageUtility:
         if source_lang == target_lang:
             return text
         
+        # Use M2M100 for Slovak and Croatian (better quality, less Czech mixing)
         if source_lang == "hr" or target_lang == "hr":
+            return self._translate_m2m(text, source_lang, target_lang)
+        
+        if source_lang == "sk" or target_lang == "sk":
             return self._translate_m2m(text, source_lang, target_lang)
         
         pair = f"{source_lang}-{target_lang}"

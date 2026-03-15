@@ -1,4 +1,5 @@
 import langid
+import re
 
 class GrammarFixer:
     def __init__(self):
@@ -21,59 +22,72 @@ class GrammarFixer:
         return text
     
     def fix_slovak(self, text):
-        corrections = {
-            "somm": "som",
-            "smu": "som", 
-            "mam": "mám",
-            "sa mas": "sa máš",
-            "mas": "máś",
-            "dakujem": "ďakujem",
-            "dakujem": "ďakujem",
-            "ahoj jak": "ahoj, ako",
-            "ty si": "ty si",
-            "ja som": "ja som",
-            "sme": "sme",
-            "ste": "ste",
-            "su": "sú",
-            "nie som": "nie som",
-            "vsetko": "všetko",
-            "dobre": "dobre",
-            "ok": "ok",
-            "super": "super",
-            "majem": "mám",
-            "máj": "mám",
-            "sma": "som",
-            "být": "byť",
-            "pretože": "pretože",
-            "takže": "takže",
-            "lenže": "lenže",
-            "ale": "ale",
-            "mohlo": "mohlo",
-            "budem": "budem",
-            "môcť": "môcť",
-            "skús": "skús",
-            "znova": "znova",
-            "čo": "čo",
-            "najlepšie": "najlepšie",
-            "môcť": "môcť",
-            "po": "po",
-            "tvojej": "tvojej",
-            "strane": "strane",
-            "tú": "tú",
-            "životnú": "životnú",
-            "úlohu": "úlohu",
-            "prekvapivo": "prekvapivo",
-            "šťastný": "šťastný",
-            "podporujúci": "podporujúci",
-            "dnes": "dnes",
-            "pomôcť": "pomôcť",
-        }
+        # Czech to Slovak common corrections
+        corrections = [
+            (r'\bslepý\b', 'široký'),
+            (r'\bslepej\b', 'slepý'),
+            (r'\bslepé\b', 'široké'),
+            (r'\bslepá\b', 'široká'),
+            (r'\bmůže\b', 'môže'),
+            (r'\bmůžete\b', 'môžete'),
+            (r'\bmůžu\b', 'môžem'),
+            (r'\bdobrý den\b', 'dobrý deň'),
+            (r'\bčau\b', 'ahoj'),
+            (r'\bčus\b', 'ahoj'),
+            (r'\bco\b', 'čo'),
+            (r'\bcos\b', 'čo si'),
+            (r'\bcó\b', 'čo'),
+            (r'\btakže\b', 'takže'),
+            (r'\bjen\b', 'len'),
+            (r'\bjeno\b', 'len'),
+            (r'\bjsem\b', 'som'),
+            (r'\bjsi\b', 'si'),
+            (r'\bjsme\b', 'sme'),
+            (r'\bsou\b', 'sú'),
+            (r'\bmít\b', 'mať'),
+            (r'\bmit\b', 'mať'),
+            (r'\bbýt\b', 'byť'),
+            (r'\bbit\b', 'byť'),
+            (r'\bvidět\b', 'vidieť'),
+            (r'\bříct\b', 'povedať'),
+            (r'\brect\b', 'povedať'),
+            (r'\bpřijít\b', 'prísť'),
+            (r'\bzítra\b', ' zajtra'),
+            (r'\bdneska\b', 'dnes'),
+            (r'\bteď\b', 'teraz'),
+            (r'\bpak\b', 'potom'),
+            (r'\bkdyž\b', 'keď'),
+            (r'\bprotože\b', 'pretože'),
+            (r'\bprávě\b', 'práve'),
+            (r'\bvlastně\b', 'vlastne'),
+            (r'\bdoufám\b', 'dúfam'),
+            (r'\bdík\b', 'vďaka'),
+            (r'\bdíky\b', 'vďaka'),
+            (r'\bdobře\b', 'dobre'),
+            (r'\bpěkně\b', 'pekne'),
+            (r'\bvidím\b', 'vidím'),
+            (r'\bmyslím\b', 'myslím'),
+            (r'\bvím\b', 'viem'),
+            (r'\bchci\b', 'chcem'),
+            (r'\bneumím\b', 'neviem'),
+            (r'\bnevím\b', 'neviem'),
+            (r'\bpřeji\b', 'želám'),
+            (r'\bsnad\b', 'snáď'),
+            (r'\bpořád\b', 'stále'),
+            (r'\bvždycky\b', 'vždy'),
+            (r'\bnikdy\b', 'nikdy'),
+            (r'\bčasto\b', 'často'),
+            (r'\bznovu\b', 'znova'),
+            (r'\bzase\b', 'zasa'),
+            (r'\bmám rád\b', 'mám rád'),
+        ]
         
         result = text
-        for wrong, correct in corrections.items():
-            import re
-            pattern = r'\b' + re.escape(wrong) + r'\b'
-            result = re.sub(pattern, correct, result, flags=re.IGNORECASE)
+        for pattern, replacement in corrections:
+            try:
+                result = re.sub(pattern, replacement, result, flags=re.IGNORECASE)
+            except:
+                pass
         
         return result
     
@@ -81,35 +95,13 @@ class GrammarFixer:
         corrections = {
             "sem": "sam",
             "uvelike": "redu",
-            "pravu smislu": "pravom smislu",
-            "gotovo besprekidno": "gotovo besprekidno",
-            "zdrava": "zdrava",
-            "prijateljska": "prijateljska",
-            "kako si danas": "kako si danas",
-            "nek i": "neki",
-            "suzvona": "zvona",
-            "domovine": "domovine",
-            "trebao": "trebao",
-            "biti": "biti",
-            "padnut": "pasti",
-            "na lice": "na lice",
-            "od sijete": "od sijete",
-            "hudo": "u redu",
-            "prijazno": "prijazno",
             "pričekam": "čekam",
             "naslednjo": "sljedeću",
             "razpravo": "razgovor",
-            "kaj se zdi": "što se",
-            "s strani": "s tvoje strane",
-            "pošiljatelja": "pošiljatelja",
-            " Bok ": " Bok ",
-            " dobro ": " dobro ",
-            " hvala ": " hvala ",
         }
         
         result = text
         for wrong, correct in corrections.items():
-            import re
             pattern = r'\b' + re.escape(wrong) + r'\b'
             result = re.sub(pattern, correct, result, flags=re.IGNORECASE)
         
