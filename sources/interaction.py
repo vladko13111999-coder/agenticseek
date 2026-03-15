@@ -159,7 +159,10 @@ class Interaction:
         push_last_agent_memory = False
         if self.last_query is None or len(self.last_query) == 0:
             return False
-        self.detected_lang = self.router.lang_analysis.detect_language(self.last_query)
+        
+        original_lang = self.router.lang_analysis.detect_language(self.last_query)
+        original_query = self.last_query
+        
         agent = self.router.select_agent(self.last_query)
         if agent is None:
             return False
@@ -170,10 +173,12 @@ class Interaction:
         self.is_generating = True
         self.last_answer, self.last_reasoning = await agent.process(self.last_query, self.speech)
         self.is_generating = False
-        if self.last_answer and self.detected_lang in ["sk", "hr"]:
-            self.last_answer = self.grammar_fixer.fix_grammar(self.last_answer, self.detected_lang)
+        
+        if self.last_answer and original_lang in ["sk", "hr"]:
+            self.last_answer = self.router.lang_analysis.translate_from_english(self.last_answer, original_lang)
+        
         if push_last_agent_memory:
-            self.current_agent.memory.push('user', self.last_query)
+            self.current_agent.memory.push('user', original_query)
             self.current_agent.memory.push('assistant', self.last_answer)
         if self.last_answer == tmp:
             self.last_answer = None
