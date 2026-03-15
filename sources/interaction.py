@@ -5,6 +5,7 @@ from sources.text_to_speech import Speech
 from sources.utility import pretty_print, animate_thinking
 from sources.router import AgentRouter
 from sources.speech_to_text import AudioTranscriber, AudioRecorder
+from sources.grammar_fixer import GrammarFixer
 import threading
 
 
@@ -27,13 +28,20 @@ class Interaction:
         self.tts_enabled = tts_enabled
         self.stt_enabled = stt_enabled
         self.recover_last_session = recover_last_session
-        self.router = AgentRouter(self.agents, supported_language=langs)
+        if isinstance(self.agents, dict):
+            agent_list = list(self.agents.values())
+        else:
+            agent_list = self.agents
+        self.router = AgentRouter(agent_list, supported_language=langs)
+        self.agent_list = agent_list
         self.ai_name = self.find_ai_name()
         self.speech = None
         self.transcriber = None
         self.recorder = None
         self.is_generating = False
         self.languages = langs
+        self.grammar_fixer = GrammarFixer()
+        self.detected_lang = "en"
         if tts_enabled:
             self.initialize_tts()
         if stt_enabled:
@@ -71,7 +79,7 @@ class Interaction:
     def find_ai_name(self) -> str:
         """Find the name of the default AI. It is required for STT as a trigger word."""
         ai_name = "jarvis"
-        for agent in self.agents:
+        for agent in self.agent_list:
             if agent.type == "casual_agent":
                 ai_name = agent.agent_name
                 break
@@ -151,6 +159,7 @@ class Interaction:
         push_last_agent_memory = False
         if self.last_query is None or len(self.last_query) == 0:
             return False
+        self.detected_lang = self.router.lang_analysis.detect_language(self.last_query)
         agent = self.router.select_agent(self.last_query)
         if agent is None:
             return False
@@ -161,6 +170,8 @@ class Interaction:
         self.is_generating = True
         self.last_answer, self.last_reasoning = await agent.process(self.last_query, self.speech)
         self.is_generating = False
+        if self.last_answer and self.detected_lang in ["sk", "hr"]:
+            self.last_answer = self.grammar_fixer.fix_grammar(self.last_answer, self.detected_lang)
         if push_last_agent_memory:
             self.current_agent.memory.push('user', self.last_query)
             self.current_agent.memory.push('assistant', self.last_answer)
