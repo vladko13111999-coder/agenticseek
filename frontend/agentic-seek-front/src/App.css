@@ -8,7 +8,7 @@ html,
 body,
 #root {
   height: 100%;
-  overflow: hidden;
+  min-height: 100vh;
 }
 
 body {
@@ -21,12 +21,11 @@ body {
 }
 
 .app {
-  height: 100vh;
+  min-height: 100vh;
   display: flex;
   flex-direction: column;
   background-color: var(--background);
   color: var(--foreground);
-  overflow: hidden;
 }
 
 .header {
@@ -265,9 +264,15 @@ body {
 .main {
   flex: 1;
   padding: 1rem 2rem;
-  overflow: hidden;
+  overflow-y: auto;
   display: flex;
   flex-direction: column;
+  min-height: calc(100vh - 70px);
+}
+
+.main > div {
+  overflow-y: auto;
+  flex: 1;
 }
 
 .section-tabs {
@@ -772,6 +777,8 @@ body {
   padding: 1rem 2rem;
   background: var(--card);
   border-bottom: 1px solid var(--border);
+  max-height: 40vh;
+  overflow-y: auto;
 }
 
 .marketing-section h2 {
