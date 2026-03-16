@@ -221,7 +221,8 @@ celery_app.conf.update(task_track_started=True)
 
 # Video generation imports
 try:
-    from moviepy.editor import ImageClip, TextClip, CompositeVideoClip, ColorClip
+    import moviepy
+    from moviepy import ColorClip, TextClip, CompositeVideoClip
     MOVIEPY_AVAILABLE = True
 except ImportError:
     MOVIEPY_AVAILABLE = False
