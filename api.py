@@ -165,26 +165,120 @@ Keep it concise and engaging. Return ONLY the script text, nothing else."""
         
         if MOVIEPY_AVAILABLE:
             try:
-                # Create a simple video with text
+                print(f"[DEBUG] Starting video generation for task {task_id}")
+                print(f"[DEBUG] Product: {product_info.get('product_name')}, Duration: {duration}s")
+                print(f"[DEBUG] Script: {script[:100]}...")
+                
+                # Font paths for Slovak diacritics - try multiple options
+                font_paths = [
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans-Bold.ttf",
+                    "/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf",
+                    "/usr/share/fonts/truetype/freefont/FreeSansBold.ttf",
+                    "DejaVuSans-Bold",
+                    "Arial"
+                ]
+                font_path = None
+                for fp in font_paths:
+                    if fp.startswith("/usr/share") and not os.path.exists(fp):
+                        continue
+                    font_path = fp
+                    break
+                
+                if not font_path:
+                    font_path = "DejaVuSans-Bold"
+                
+                print(f"[DEBUG] Using font: {font_path}")
+                
                 w, h = 1280, 720
-                bg = ColorClip(size=(w, h), color=(74, 144, 226), duration=duration)
+                scenes = []
                 
-                # Add title text
-                title = product_info.get('product_name', 'Product')[:30]
-                txt = TextClip(title, fontsize=50, color='white', size=(w, h-100))
-                txt = txt.set_pos(('center', 'center')).set_duration(duration)
+                # Parse script into scenes - ensure we have enough content
+                script_lines = [line.strip() for line in script.split('\n') if line.strip()]
                 
-                # Add price if available
-                price = product_info.get('price', '')
-                if price:
-                    price_txt = TextClip(price, fontsize=40, color='yellow', size=(w, h-200))
-                    price_txt = price_txt.set_pos(('center', 'bottom')).set_duration(duration)
-                    video = CompositeVideoClip([bg, txt, price_txt])
+                # Ensure minimum number of scenes with fallback content
+                if len(script_lines) < 2:
+                    script_lines = [
+                        product_info.get('product_name', 'Produkt'),
+                        script[:80] if script else "Vyskúšajte teraz!",
+                        "Špeciálna ponuka pre vás",
+                        "Kontaktujte nás"
+                    ]
+                
+                # Ensure we have at least 4 lines for good video content
+                while len(script_lines) < 4:
+                    script_lines.append("Novinka!")
+                
+                # Create scene duration - divide total duration evenly
+                num_scenes = min(len(script_lines), 4) + 2  # +2 for title and CTA
+                scene_duration = max(1.5, duration / num_scenes)
+                
+                print(f"[DEBUG] Creating {num_scenes} scenes, each {scene_duration:.1f}s")
+                
+                # Scene 1: Title/Product name
+                title = product_info.get('product_name', 'Produkt')[:25]
+                if not title or title == 'Unknown':
+                    title = "Náš Produkt"
+                bg1 = ColorClip(size=(w, h), color=(74, 144, 226), duration=scene_duration)
+                txt1 = TextClip(
+                    text=title,
+                    font_size=60,
+                    color='white',
+                    font=font_path,
+                    method='label',
+                    duration=scene_duration
+                )
+                txt1 = txt1.with_position(('center', 'center'))
+                scenes.append(CompositeVideoClip([bg1, txt1]))
+                
+                # Scene 2-4: Script lines as scenes (use up to 3 meaningful lines)
+                colors = [(30, 64, 175), (124, 58, 237), (220, 38, 38), (34, 197, 94)]
+                for i, line in enumerate(script_lines[1:4]):
+                    if len(scenes) >= 5:  # Leave room for CTA
+                        break
+                    if not line or len(line) < 2:
+                        continue
+                    scene_bg = ColorClip(size=(w, h), color=colors[i % len(colors)], duration=scene_duration)
+                    txt = TextClip(
+                        text=line[:50],  # Allow longer text
+                        font_size=40,
+                        color='white',
+                        font=font_path,
+                        method='label',
+                        duration=scene_duration
+                    )
+                    txt = txt.with_position(('center', 'center'))
+                    scenes.append(CompositeVideoClip([scene_bg, txt]))
+                
+                # Final scene: CTA with Slovak text
+                cta_texts = ["Kúpte teraz!", "Objednajte teraz!", "Vyskúšajte zadarmo!", "Navštívte nás"]
+                cta_bg = ColorClip(size=(w, h), color=(234, 179, 8), duration=scene_duration)
+                cta_txt = TextClip(
+                    text=cta_texts[0],
+                    font_size=50,
+                    color='black',
+                    font=font_path,
+                    method='label',
+                    duration=scene_duration
+                )
+                cta_txt = cta_txt.with_position(('center', 'center'))
+                scenes.append(CompositeVideoClip([cta_bg, cta_txt]))
+                
+                print(f"[DEBUG] Created {len(scenes)} scenes")
+                
+                # Concatenate all scenes
+                if len(scenes) > 1:
+                    from moviepy import concatenate_videoclips
+                    video = concatenate_videoclips(scenes, method="compose")
                 else:
-                    video = CompositeVideoClip([bg, txt])
+                    video = scenes[0]
                 
-                video.write_videofile(output_path, fps=24, codec='libx264', audio=False, verbose=False, logger=None)
+                print(f"[DEBUG] Writing video to {output_path}")
+                video.write_videofile(output_path, fps=24, codec='libx264', audio=False)
+                print(f"[DEBUG] Video saved successfully to {output_path}")
             except Exception as e:
+                print(f"[DEBUG] Video generation failed: {str(e)}")
+                import traceback
+                traceback.print_exc()
                 task_queue[task_id]["status"] = "failed"
                 task_queue[task_id]["error"] = f"Video generation failed: {str(e)}"
                 # Create placeholder file
@@ -346,7 +440,7 @@ async def get_latest_answer():
         return JSONResponse(status_code=404, content={"error": "No agent available"})
     uid = str(uuid.uuid4())
     if not any(q["answer"] == interaction.current_agent.last_answer for q in query_resp_history):
-        blocks = {f'{i}': block.jsonify() for i, block in enumerate(interaction.get_last_blocks_results())}
+        blocks = {}
         query_resp = {
             "done": "false",
             "answer": interaction.current_agent.last_answer,
