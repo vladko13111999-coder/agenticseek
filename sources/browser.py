@@ -249,31 +249,41 @@ def create_undetected_chromedriver(service, chrome_options) -> webdriver.Chrome:
     driver.execute_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined})") 
     return driver
 
-def create_driver(headless=False, stealth_mode=True, crx_path="./crx/nopecha.crx", lang="en") -> webdriver.Chrome:
-    """Create a Chrome WebDriver with specified options."""
-    # Warn if trying to run non-headless in Docker
-    if not headless and os.path.exists('/.dockerenv'):
-        print("[WARNING] Running non-headless browser in Docker may fail!")
-        print("[WARNING] Consider setting headless=True or headless_browser=True in config.ini")
+def create_driver(headless=True, stealth_mode=False, crx_path=None, lang="en"):
+    """
+    Creates a Chrome WebDriver instance.
+    """
+    from sources.logger import Logger
+    logger = Logger("browser.log")
     
-    chrome_options = create_chrome_options(headless, stealth_mode, crx_path, lang)
-    chromedriver_path = install_chromedriver()
-    service = Service(chromedriver_path)
+    # Nastavenie Chrome options
+    chrome_options = Options()
+    chrome_options.add_argument("--no-sandbox")
+    chrome_options.add_argument("--disable-dev-shm-usage")
+    chrome_options.add_argument("--disable-gpu")
+    chrome_options.add_argument("--disable-blink-features=AutomationControlled")
+    chrome_options.add_argument("--window-size=1920,1080")
+    chrome_options.add_argument(f"--lang={lang}")
+    chrome_options.add_argument("--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/145.0.7632.159 Safari/537.36")
     
+    if headless:
+        chrome_options.add_argument("--headless=new")
+    
+    # Pridanie stealth parametrov, ak je potrebné
     if stealth_mode:
-        driver = create_undetected_chromedriver(service, chrome_options)
-        user_agent = get_random_user_agent()
-        stealth(driver,
-            languages=["en-US", "en"],
-            vendor=user_agent["vendor"],
-            platform="Win64" if "windows" in user_agent["ua"].lower() else "MacIntel" if "mac" in user_agent["ua"].lower() else "Linux x86_64",
-            webgl_vendor="Intel Inc.",
-            renderer="Intel Iris OpenGL Engine",
-            fix_hairline=True,
-        )
+        # Môžeme pridať ďalšie argumenty, ale nie sú nutné
+        pass
+    
+    # Cesta k ChromeDriveru (už je v PATH)
+    service = Service()
+    
+    try:
+        driver = webdriver.Chrome(service=service, options=chrome_options)
+        print("✅ ChromeDriver created successfully")
         return driver
-    else:
-        return webdriver.Chrome(service=service, options=chrome_options)
+    except Exception as e:
+        logger.error(f"Failed to create Chrome driver: {e}")
+        raise e
 
 class Browser:
     def __init__(self, driver, anticaptcha_manual_install=False):

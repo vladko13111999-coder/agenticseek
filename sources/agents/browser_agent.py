@@ -7,7 +7,7 @@ import asyncio
 
 from sources.utility import pretty_print, animate_thinking
 from sources.agents.agent import Agent
-from sources.tools.searxSearch import searxSearch
+from sources.tools.google_search import GoogleSearchTool
 from sources.browser import Browser
 from sources.logger import Logger
 from sources.memory import Memory
@@ -26,7 +26,7 @@ class BrowserAgent(Agent):
         """
         super().__init__(name, prompt_path, provider, verbose, browser)
         self.tools = {
-            "web_search": searxSearch(),
+            "web_search": GoogleSearchTool(),
         }
         self.role = "web"
         self.type = "browser_agent"

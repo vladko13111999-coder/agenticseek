@@ -1,4 +1,5 @@
 import json
+from sources.tools.marketing_generator import MarketingGenerator
 from typing import List, Tuple, Type, Dict
 from sources.utility import pretty_print, animate_thinking
 from sources.agents.agent import Agent
@@ -8,6 +9,7 @@ from sources.agents.browser_agent import BrowserAgent
 from sources.agents.casual_agent import CasualAgent
 from sources.text_to_speech import Speech
 from sources.tools.tools import Tools
+from sources.tools.web_analyzer import WebAnalyzer
 from sources.logger import Logger
 from sources.memory import Memory
 
@@ -18,9 +20,11 @@ class PlannerAgent(Agent):
         """
         super().__init__(name, prompt_path, provider, verbose, None)
         self.tools = {
-            "json": Tools()
+            "json": Tools(),
         }
         self.tools['json'].tag = "json"
+        self.tools["web_analyzer"] = WebAnalyzer()
+        self.tools["marketing_generator"] = MarketingGenerator()
         self.browser = browser
         self.agents = {
             "coder": CoderAgent(name, "prompts/base/coder_agent.txt", provider, verbose=False),
@@ -265,32 +269,14 @@ class PlannerAgent(Agent):
         required_infos = None
         agents_work_result = dict()
 
-        self.status_message = "Making a plan..."
-        agents_tasks = await self.make_plan(goal)
-
-        if agents_tasks == []:
-            return "Failed to parse the tasks.", ""
-        i = 0
-        steps = len(agents_tasks)
-        while i < steps and not self.stop:
-            task_name, task = agents_tasks[i][0], agents_tasks[i][1]
-            self.status_message = "Starting agents..."
-            pretty_print(f"I will {task_name}.", color="info")
-            self.last_answer = f"I will {task_name.lower()}."
-            pretty_print(f"Assigned agent {task['agent']} to {task_name}", color="info")
-            if speech_module: speech_module.speak(f"I will {task_name}. I assigned the {task['agent']} agent to the task.")
-
-            if agents_work_result is not None:
-                required_infos = self.get_work_result_agent(task['need'], agents_work_result)
-            try:
-                answer, success = await self.start_agent_process(task, required_infos)
-            except Exception as e:
-                raise e
-            if self.stop:
-                pretty_print(f"Requested stop.", color="failure")
-            agents_work_result[task['id']] = answer
-            agents_tasks = await self.update_plan(goal, agents_tasks, agents_work_result, task['id'], success)
-            steps = len(agents_tasks)
-            i += 1
-
+        # Temporary fix: skip planning and execute task directly with casual agent
+        self.status_message = "Processing request directly..."
+        pretty_print(f"Direct task execution for: {goal}", color="info")
+        
+        task = {"agent": "casual", "description": goal, "id": 1, "task": goal}
+        try:
+            answer, success = await self.start_agent_process(task, {})
+        except Exception as e:
+            return f"Error: {str(e)}", ""
+        
         return answer, ""

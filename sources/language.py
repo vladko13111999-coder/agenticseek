@@ -1,5 +1,6 @@
 import langid
 from transformers import MarianMTModel, MarianTokenizer, M2M100ForConditionalGeneration, M2M100Tokenizer
+from sources.grammar_fixer import GrammarFixer
 import warnings
 warnings.filterwarnings("ignore", category=FutureWarning)
 
@@ -10,6 +11,7 @@ class LanguageUtility:
         self.tokenizers = {}
         self.m2m_model = None
         self.m2m_tokenizer = None
+        self.grammar_fixer = GrammarFixer()
         self.load_models()
 
     def load_models(self):
@@ -55,6 +57,10 @@ class LanguageUtility:
             forced_bos_token_id=self.m2m_tokenizer.get_lang_id(target_lang)
         )
         translated = self.m2m_tokenizer.batch_decode(generated_tokens, skip_special_tokens=True)[0]
+        
+        if target_lang == "sk":
+            translated = self.grammar_fixer.fix_slovak(translated)
+        
         return translated
 
     def _translate(self, text, source_lang, target_lang):
@@ -92,7 +98,12 @@ class LanguageUtility:
 
     def translate_from_english(self, text, target_lang):
         """Preloží text z angličtiny do cieľového jazyka"""
-        return self._translate(text, "en", target_lang)
+        result = self._translate(text, "en", target_lang)
+        
+        if target_lang == "sk":
+            result = self.grammar_fixer.fix_slovak(result)
+        
+        return result
 
     def translate(self, text, source_lang):
         """Pre router – preklad do angličtiny (aby sedelo volanie)"""

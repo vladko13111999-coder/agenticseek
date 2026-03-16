@@ -154,18 +154,21 @@ class Interaction:
         self.is_active = True
         self.last_query = query
     
-    async def think(self) -> bool:
-        """Request AI agents to process the user input."""
-        push_last_agent_memory = False
+    async def think(self, force_lang=None) -> bool:
+        """Main function that triggers the whole process"""
         if self.last_query is None or len(self.last_query) == 0:
             return False
         
-        original_lang = self.router.lang_analysis.detect_language(self.last_query)
+        if force_lang:
+            original_lang = force_lang
+        else:
+            original_lang = self.router.lang_analysis.detect_language(self.last_query)
         original_query = self.last_query
         
         agent = self.router.select_agent(self.last_query)
         if agent is None:
             return False
+        push_last_agent_memory = False
         if self.current_agent != agent and self.last_answer is not None:
             push_last_agent_memory = True
         tmp = self.last_answer

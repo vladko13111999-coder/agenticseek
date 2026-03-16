@@ -175,6 +175,22 @@ ENV/
 env.bak/
 venv.bak/
 
+# Logs and screenshots
+logs/
+/logs
+.screenshots/
+
+# Config with secrets
+config.ini
+config.toml
+
+# Model files (download later)
+*.bin
+*.h5
+*.onnx
+models/
+checkpoints/
+
 # Spyder project settings
 .spyderproject
 .spyproject

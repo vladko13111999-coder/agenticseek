@@ -21,6 +21,14 @@ function App() {
   const [expandedReasoning, setExpandedReasoning] = useState(new Set());
   const messagesEndRef = useRef(null);
 
+  // Marketing generation state
+  const [marketingUrl, setMarketingUrl] = useState("");
+  const [marketingLang, setMarketingLang] = useState("sk");
+  const [marketingTaskId, setMarketingTaskId] = useState(null);
+  const [marketingStatus, setMarketingStatus] = useState(null);
+  const [marketingResult, setMarketingResult] = useState(null);
+  const [isMarketingGenerating, setIsMarketingGenerating] = useState(false);
+
   const fetchLatestAnswer = useCallback(async () => {
     try {
       const res = await axios.get(`${BACKEND_URL}/latest_answer`);
@@ -64,6 +72,33 @@ function App() {
     }, 3000);
     return () => clearInterval(intervalId);
   }, [fetchLatestAnswer]);
+
+  // Poll for marketing task status
+  useEffect(() => {
+    if (!marketingTaskId) return;
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${BACKEND_URL}/status/${marketingTaskId}`);
+        const data = res.data;
+        setMarketingStatus(data.status);
+        
+        if (data.status === "completed") {
+          setMarketingResult(data.result);
+          setIsMarketingGenerating(false);
+          clearInterval(pollInterval);
+        } else if (data.status === "failed") {
+          setError(data.error || "Marketing generation failed");
+          setIsMarketingGenerating(false);
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        console.error("Error polling task status:", err);
+      }
+    }, 2000);
+    
+    return () => clearInterval(pollInterval);
+  }, [marketingTaskId]);
 
   const checkHealth = async () => {
     try {
@@ -200,6 +235,32 @@ function App() {
     }
   };
 
+  const handleGenerateMarketing = async (e) => {
+    e.preventDefault();
+    if (!marketingUrl.trim()) {
+      setError("URL is required");
+      return;
+    }
+    
+    setError(null);
+    setMarketingResult(null);
+    setMarketingStatus(null);
+    setIsMarketingGenerating(true);
+    
+    try {
+      const res = await axios.post(`${BACKEND_URL}/generate`, {
+        url: marketingUrl,
+        lang: marketingLang
+      });
+      setMarketingTaskId(res.data.task_id);
+      setMarketingStatus(res.data.status);
+    } catch (err) {
+      console.error("Error starting generation:", err);
+      setError("Failed to start generation");
+      setIsMarketingGenerating(false);
+    }
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -239,6 +300,50 @@ function App() {
           </div>
         </div>
       </header>
+      <div className="marketing-section">
+        <h2>Marketing Generator</h2>
+        <form onSubmit={handleGenerateMarketing} className="marketing-form">
+          <input
+            type="url"
+            value={marketingUrl}
+            onChange={(e) => setMarketingUrl(e.target.value)}
+            placeholder="Enter product URL..."
+            disabled={isMarketingGenerating}
+            className="marketing-url-input"
+          />
+          <select
+            value={marketingLang}
+            onChange={(e) => setMarketingLang(e.target.value)}
+            disabled={isMarketingGenerating}
+            className="marketing-lang-select"
+          >
+            <option value="sk">Slovak</option>
+            <option value="cs">Czech</option>
+            <option value="hr">Croatian</option>
+            <option value="en">English</option>
+          </select>
+          <button
+            type="submit"
+            disabled={isMarketingGenerating}
+            className="marketing-generate-btn"
+          >
+            {isMarketingGenerating ? "Generating..." : "Generate"}
+          </button>
+        </form>
+        {isMarketingGenerating && marketingStatus && (
+          <div className="marketing-status">
+            <div className="loading-spinner"></div>
+            <span>Status: {marketingStatus}</span>
+          </div>
+        )}
+        {marketingResult && (
+          <div className="marketing-result">
+            <h3>Generated Marketing Content</h3>
+            <pre>{marketingResult.answer}</pre>
+          </div>
+        )}
+        {error && <p className="error">{error}</p>}
+      </div>
       <main className="main">
         <ResizableLayout initialLeftWidth={50}>
           <div className="chat-section">

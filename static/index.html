@@ -1,0 +1,91 @@
+<!DOCTYPE html>
+<html lang="sk">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>AI Marketing Agent</title>
+    <style>
+        body { font-family: Arial, sans-serif; max-width: 800px; margin: 50px auto; padding: 20px; background: #f5f5f5; }
+        h1 { color: #333; text-align: center; }
+        form { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); }
+        label { display: block; margin-bottom: 8px; font-weight: bold; color: #555; }
+        input[type=url], select { width: 100%; padding: 12px; margin-bottom: 20px; border: 1px solid #ddd; border-radius: 4px; box-sizing: border-box; }
+        button { background: #4CAF50; color: white; padding: 14px 20px; border: none; border-radius: 4px; cursor: pointer; width: 100%; font-size: 16px; }
+        button:hover { background: #45a049; }
+        #loading { display: none; text-align: center; margin-top: 20px; }
+        #result { margin-top: 30px; background: white; padding: 20px; border-radius: 10px; box-shadow: 0 2px 10px rgba(0,0,0,0.1); white-space: pre-wrap; font-family: monospace; }
+        .error { color: red; background: #ffeeee; padding: 10px; border-radius: 5px; margin-top: 20px; }
+    </style>
+</head>
+<body>
+    <h1>🤖 AI Marketing Agent</h1>
+    <p>Enter product URL and the agent will generate marketing materials in your language.</p>
+    <form id="marketingForm">
+        <label for="url">Product URL:</label>
+        <input type="url" id="url" name="url" placeholder="https://..." required>
+
+        <label for="lang">Output language:</label>
+        <select id="lang" name="lang">
+            <option value="sk">Slovak</option>
+            <option value="en">English</option>
+            <option value="hr">Croatian</option>
+        </select>
+
+        <button type="submit">Generate marketing</button>
+    </form>
+
+    <div id="loading">⏳ Processing request, please wait...</div>
+    <div id="result"></div>
+
+    <script>
+        document.getElementById('marketingForm').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const url = document.getElementById('url').value;
+            const lang = document.getElementById('lang').value;
+            const resultDiv = document.getElementById('result');
+            const loadingDiv = document.getElementById('loading');
+
+            resultDiv.innerHTML = '';
+            loadingDiv.style.display = 'block';
+
+            try {
+                const response = await fetch('/generate', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url, lang })
+                });
+                const data = await response.json();
+                loadingDiv.style.display = 'none';
+
+                if (response.ok) {
+                    resultDiv.innerHTML = '<h3>Result:</h3>' + formatOutput(data);
+                } else {
+                    resultDiv.innerHTML = `<div class="error">Error: ${data.error || 'Unknown error'}</div>`;
+                }
+            } catch (error) {
+                loadingDiv.style.display = 'none';
+                resultDiv.innerHTML = `<div class="error">Connection error: ${error.message}</div>`;
+            }
+        });
+
+        function formatOutput(data) {
+            let html = '';
+            if (data.answer) {
+                html += '<h4>Agent answer:</h4>';
+                html += '<pre>' + escapeHtml(data.answer) + '</pre>';
+            }
+            if (data.reasoning) {
+                html += '<h4>Reasoning:</h4>';
+                html += '<pre>' + escapeHtml(data.reasoning) + '</pre>';
+            }
+            return html;
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+    </script>
+</body>
+</html>

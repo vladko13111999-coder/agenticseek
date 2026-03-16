@@ -66,7 +66,8 @@ def process_generate_task(task_id: str, url: str, lang: str):
         async def run_task():
             global is_generating
             is_generating = True
-            success = await think_wrapper(interaction, prompt)
+            # Don't force translation since prompt already asks for target language
+            success = await think_wrapper(interaction, prompt, force_lang=None)
             is_generating = False
             return success
         
@@ -138,7 +139,7 @@ def init_interaction():
         "planner": PlannerAgent("planner", "prompts/planner_agent.txt", provider, verbose=False),
         "coder": CoderAgent("coder", "prompts/coder_agent.txt", provider, verbose=False),
         "file": FileAgent("file", "prompts/file_agent.txt", provider, verbose=False),
-        "browser": BrowserAgent("browser", "prompts/browser_agent.txt", provider, verbose=False),
+        "browser": BrowserAgent("browser", "prompts/browser_agent.txt", provider, verbose=False, browser=browser),
         "casual": CasualAgent("casual", "prompts/casual_agent.txt", provider, verbose=False)
     }
     print("Agents types:")
@@ -150,11 +151,11 @@ def init_interaction():
     else:
         print(" interaction initialized successfully.")
 
-async def think_wrapper(interaction, query):
+async def think_wrapper(interaction, query, force_lang=None):
     try:
         interaction.last_query = query
         logger.info("Agents request is being processed")
-        success = await interaction.think()
+        success = await interaction.think(force_lang=force_lang)
         if not success:
             interaction.last_answer = "Error: No answer from agent"
             interaction.last_reasoning = "Error: No reasoning from agent"
@@ -171,14 +172,12 @@ async def think_wrapper(interaction, query):
         interaction.last_success = False
         raise e
 
-@app.on_event("startup")
+@api.on_event("startup")
 async def startup_event():
     logger.info("Startup event: initializing interaction...")
     init_interaction()   # toto je v poriadku, je odsadené vo vnútri funkcie
 
 # koniec funkcie startup_event
-
-init_interaction()  # TOTO musí byť bez odsadenia, na začiatku riadku
 
 # Endpointy
 

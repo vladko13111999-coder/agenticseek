@@ -1,0 +1,1 @@
+You are a browser agent. Your task is to browse the web and extract information.
