@@ -23,10 +23,12 @@ async def main():
     personality_folder = "jarvis" if config.getboolean('MAIN', 'jarvis_personality') else "base"
     languages = config["MAIN"]["languages"].split(' ')
 
+    available_models_list = config["MAIN"].get("available_models", config["MAIN"]["provider_model"]).split(',')
     provider = Provider(provider_name=config["MAIN"]["provider_name"],
                         model=config["MAIN"]["provider_model"],
                         server_address=config["MAIN"]["provider_server_address"],
-                        is_local=config.getboolean('MAIN', 'is_local'))
+                        is_local=config.getboolean('MAIN', 'is_local'),
+                        available_models=available_models_list)
 
     browser = Browser(
         create_driver(headless=config.getboolean('BROWSER', 'headless_browser'), stealth_mode=stealth_mode, lang=languages[0]),

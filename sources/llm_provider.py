@@ -14,13 +14,85 @@ from openai import OpenAI
 from sources.logger import Logger
 from sources.utility import pretty_print, animate_thinking
 
+
+class ModelRouter:
+    """
+    Analyzes user prompts and selects the most appropriate model based on task type.
+    """
+    
+    def __init__(self, available_models=None, default_model="qwen2.5:14b"):
+        self.available_models = available_models or ["qwen2.5:14b", "deepseek-r1:14b", "llama3.1:8b"]
+        self.default_model = default_model
+        
+        self.task_patterns = {
+            "general": {
+                "keywords": ["ahoj", "hello", "hi", "hey", "ako sa", "how are", "what's up", "thanks", "thank you", "help", "question", "what", "can you"],
+                "model": "llama3.1:8b"
+            },
+            "code": {
+                "keywords": ["python", "javascript", "program", "function", "class", "implement", "algorithm", "debug", "script", "api", "database", "sql", "html", "css", "react", "node", "java", "c++", "linux", "shell", "bash", "code"],
+                "model": "qwen2.5:14b"
+            },
+            "reasoning": {
+                "keywords": ["reason", "think", "explain why", "logic", "solve", "math", "calculate", "prove", "compare", "contrast", "evaluate", "critique", "analyze"],
+                "model": "deepseek-r1:14b"
+            },
+            "creative": {
+                "keywords": ["write", "story", "poem", "song", "creative", "imagine", "fantasy", "joke", "humor", "funny", "screenplay", "dialogue", "narrative"],
+                "model": "llama3.1:8b"
+            },
+            "search": {
+                "keywords": ["search", "find", "lookup", "research", "information", "who is", "when", "where", "how to", "tips", "guide"],
+                "model": "qwen2.5:14b"
+            }
+        }
+    
+    def analyze_prompt(self, prompt: str) -> str:
+        """
+        Analyzes the prompt and returns the recommended model.
+        """
+        prompt_lower = prompt.lower()
+        
+        scores = {}
+        for task_type, config in self.task_patterns.items():
+            score = 0
+            for keyword in config["keywords"]:
+                if keyword in prompt_lower:
+                    score += 1
+            if score > 0:
+                scores[config["model"]] = scores.get(config["model"], 0) + score
+        
+        if scores:
+            best_model = max(scores, key=scores.get)
+            if best_model in self.available_models:
+                return best_model
+        
+        return self.default_model
+    
+    def get_model_for_prompt(self, history: list) -> str:
+        """
+        Extracts the latest user message from history and selects appropriate model.
+        """
+        user_message = ""
+        for msg in reversed(history):
+            if msg.get("role") == "user":
+                user_message = msg.get("content", "")
+                break
+        
+        if not user_message:
+            return self.default_model
+        
+        return self.analyze_prompt(user_message)
+
 class Provider:
-    def __init__(self, provider_name, model, server_address="127.0.0.1:5000", is_local=False):
+    def __init__(self, provider_name, model, server_address="127.0.0.1:5000", is_local=False, available_models=None):
         self.provider_name = provider_name.lower()
         self.model = model
         self.is_local = is_local
         self.server_ip = server_address
         self.server_address = server_address
+        self.available_models = available_models or [model]
+        self.router = ModelRouter(available_models=self.available_models, default_model=model)
         self.available_providers = {
             "ollama": self.ollama_fn,
             "server": self.server_fn,
@@ -67,10 +139,16 @@ class Provider:
 
     def respond(self, history, verbose=True):
         """
-        Use the choosen provider to generate text.
+        Use the chosen provider to generate text.
+        Uses ModelRouter to select the best model based on task type.
         """
+        selected_model = self.router.get_model_for_prompt(history)
+        if selected_model != self.model:
+            self.logger.info(f"Router selected model: {selected_model} for this task")
+            self.model = selected_model
+        
         llm = self.available_providers[self.provider_name]
-        self.logger.info(f"Using provider: {self.provider_name} at {self.server_ip}")
+        self.logger.info(f"Using provider: {self.provider_name} at {self.server_ip} with model: {self.model}")
         try:
             thought = llm(history, verbose)
         except KeyboardInterrupt:
