@@ -98,10 +98,133 @@ def process_generate_task(task_id: str, url: str, lang: str):
     finally:
         task_queue[task_id]["completed_at"] = time.time()
 
-# Celery (nepoužíva sa zatiaľ, ale môžeš nechať)
+def process_video_task(task_id: str, url: str, lang: str, duration: int = 15):
+    """Background task to generate video from product URL"""
+    global interaction
+    from sources.tools.web_analyzer import WebAnalyzer
+    
+    try:
+        task_queue[task_id]["status"] = "analyzing"
+        task_queue[task_id]["started_at"] = time.time()
+        
+        # Step 1: Analyze the product URL
+        analyzer = WebAnalyzer()
+        product_info = analyzer.execute(url)
+        
+        if "error" in product_info:
+            task_queue[task_id]["status"] = "failed"
+            task_queue[task_id]["error"] = f"Failed to analyze URL: {product_info['error']}"
+            return
+        
+        task_queue[task_id]["status"] = "generating_script"
+        task_queue[task_id]["product_info"] = product_info
+        
+        # Step 2: Generate video script using LLM
+        prompt = f"""Create a short video advertisement script for a product.
+        
+Product name: {product_info.get('product_name', 'Unknown')}
+Description: {product_info.get('description', '')}
+Price: {product_info.get('price', '')}
+
+Create a {duration}-second video script in {lang} language.
+Include:
+- Hook (first 2 seconds)
+- Product highlight (5 seconds)
+- Call to action (last 3 seconds)
+
+Keep it concise and engaging. Return ONLY the script text, nothing else."""
+
+        if interaction is None:
+            task_queue[task_id]["status"] = "failed"
+            task_queue[task_id]["error"] = "Agent initialization failed"
+            return
+        
+        async def run_video_task():
+            global is_generating
+            is_generating = True
+            interaction.last_query = prompt
+            await interaction.think()
+            is_generating = False
+            return interaction.last_answer
+        
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+        try:
+            script = loop.run_until_complete(run_video_task())
+        finally:
+            loop.close()
+        
+        task_queue[task_id]["script"] = script
+        
+        # Step 3: Generate video (or create placeholder)
+        task_queue[task_id]["status"] = "creating_video"
+        
+        output_dir = "static/videos"
+        os.makedirs(output_dir, exist_ok=True)
+        output_path = os.path.join(output_dir, f"{task_id}.mp4")
+        
+        if MOVIEPY_AVAILABLE:
+            try:
+                # Create a simple video with text
+                w, h = 1280, 720
+                bg = ColorClip(size=(w, h), color=(74, 144, 226), duration=duration)
+                
+                # Add title text
+                title = product_info.get('product_name', 'Product')[:30]
+                txt = TextClip(title, fontsize=50, color='white', size=(w, h-100))
+                txt = txt.set_pos(('center', 'center')).set_duration(duration)
+                
+                # Add price if available
+                price = product_info.get('price', '')
+                if price:
+                    price_txt = TextClip(price, fontsize=40, color='yellow', size=(w, h-200))
+                    price_txt = price_txt.set_pos(('center', 'bottom')).set_duration(duration)
+                    video = CompositeVideoClip([bg, txt, price_txt])
+                else:
+                    video = CompositeVideoClip([bg, txt])
+                
+                video.write_videofile(output_path, fps=24, codec='libx264', audio=False, verbose=False, logger=None)
+            except Exception as e:
+                task_queue[task_id]["status"] = "failed"
+                task_queue[task_id]["error"] = f"Video generation failed: {str(e)}"
+                # Create placeholder file
+                with open(output_path.replace('.mp4', '.txt'), 'w') as f:
+                    f.write(f"Video script: {script}\n\nProduct: {product_info.get('product_name')}\nDuration: {duration}s")
+                output_path = output_path.replace('.mp4', '.txt')
+        else:
+            # Create placeholder without moviepy
+            with open(output_path.replace('.mp4', '.txt'), 'w') as f:
+                f.write(f"Video script for {product_info.get('product_name')}:\n\n{script}\n\nDuration: {duration}s\nProduct URL: {url}")
+            output_path = output_path.replace('.mp4', '.txt')
+        
+        # Return result
+        video_url = f"/static/videos/{os.path.basename(output_path)}"
+        task_queue[task_id]["status"] = "completed"
+        task_queue[task_id]["result"] = {
+            "url": url,
+            "language": lang,
+            "duration": duration,
+            "product_name": product_info.get('product_name'),
+            "script": script,
+            "video_url": video_url,
+            "video_path": output_path
+        }
+        
+    except Exception as e:
+        task_queue[task_id]["status"] = "failed"
+        task_queue[task_id]["error"] = str(e)
+    finally:
+        task_queue[task_id]["completed_at"] = time.time()
 from celery import Celery
 celery_app = Celery("tasks", broker="redis://localhost:6379/0", backend="redis://localhost:6379/0")
 celery_app.conf.update(task_track_started=True)
+
+# Video generation imports
+try:
+    from moviepy.editor import ImageClip, TextClip, CompositeVideoClip, ColorClip
+    MOVIEPY_AVAILABLE = True
+except ImportError:
+    MOVIEPY_AVAILABLE = False
 
 logger = Logger("backend.log")
 config = configparser.ConfigParser()
@@ -324,6 +447,51 @@ async def generate(request: Request):
         "task_id": task_id,
         "status": "pending",
         "message": "Task submitted. Use /status/{task_id} to check progress."
+    })
+
+@api.post("/generate_video")
+async def generate_video(request: Request):
+    """Generate video from product URL"""
+    global interaction
+    if interaction is None:
+        logger.warning("Interaction is None, re-initializing...")
+        init_interaction()
+        if interaction is None:
+            return JSONResponse(status_code=500, content={"error": "Agent initialization failed."})
+
+    data = await request.json()
+    url = data.get("url")
+    lang = data.get("lang", "sk")
+    duration = data.get("duration", 15)
+
+    if not url:
+        return JSONResponse(status_code=400, content={"error": "URL is required"})
+    
+    # Validate duration
+    if duration not in [5, 10, 15, 30]:
+        duration = 15
+
+    # Create task ID
+    task_id = str(uuid.uuid4())
+    
+    # Initialize task status
+    task_queue[task_id] = {
+        "status": "pending",
+        "url": url,
+        "lang": lang,
+        "duration": duration,
+        "created_at": time.time()
+    }
+    
+    # Submit background task
+    task_executor.submit(process_video_task, task_id, url, lang, duration)
+    
+    # Return immediately with task ID
+    return JSONResponse(status_code=202, content={
+        "task_id": task_id,
+        "status": "pending",
+        "message": "Video generation started. Use /status/{task_id} to check progress.",
+        "moviepy_available": MOVIEPY_AVAILABLE
     })
 
 @api.get("/status/{task_id}")
