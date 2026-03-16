@@ -29,6 +29,16 @@ function App() {
   const [marketingResult, setMarketingResult] = useState(null);
   const [isMarketingGenerating, setIsMarketingGenerating] = useState(false);
 
+  // Video generation state
+  const [videoUrl, setVideoUrl] = useState("");
+  const [videoLang, setVideoLang] = useState("sk");
+  const [videoDuration, setVideoDuration] = useState("15");
+  const [videoTaskId, setVideoTaskId] = useState(null);
+  const [videoStatus, setVideoStatus] = useState(null);
+  const [videoResult, setVideoResult] = useState(null);
+  const [isVideoGenerating, setIsVideoGenerating] = useState(false);
+  const [activeTab, setActiveTab] = useState("marketing");
+
   const fetchLatestAnswer = useCallback(async () => {
     try {
       const res = await axios.get(`${BACKEND_URL}/latest_answer`);
@@ -99,6 +109,33 @@ function App() {
     
     return () => clearInterval(pollInterval);
   }, [marketingTaskId]);
+
+  // Poll for video task status
+  useEffect(() => {
+    if (!videoTaskId) return;
+    
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await axios.get(`${BACKEND_URL}/status/${videoTaskId}`);
+        const data = res.data;
+        setVideoStatus(data.status);
+        
+        if (data.status === "completed") {
+          setVideoResult(data.result);
+          setIsVideoGenerating(false);
+          clearInterval(pollInterval);
+        } else if (data.status === "failed") {
+          setError(data.error || "Video generation failed");
+          setIsVideoGenerating(false);
+          clearInterval(pollInterval);
+        }
+      } catch (err) {
+        console.error("Error polling video task status:", err);
+      }
+    }, 2000);
+    
+    return () => clearInterval(pollInterval);
+  }, [videoTaskId]);
 
   const checkHealth = async () => {
     try {
@@ -261,6 +298,33 @@ function App() {
     }
   };
 
+  const handleGenerateVideo = async (e) => {
+    e.preventDefault();
+    if (!videoUrl.trim()) {
+      setError("URL is required");
+      return;
+    }
+    
+    setError(null);
+    setVideoResult(null);
+    setVideoStatus(null);
+    setIsVideoGenerating(true);
+    
+    try {
+      const res = await axios.post(`${BACKEND_URL}/generate_video`, {
+        url: videoUrl,
+        lang: videoLang,
+        duration: parseInt(videoDuration)
+      });
+      setVideoTaskId(res.data.task_id);
+      setVideoStatus(res.data.status);
+    } catch (err) {
+      console.error("Error starting video generation:", err);
+      setError("Failed to start video generation");
+      setIsVideoGenerating(false);
+    }
+  };
+
   return (
     <div className="app">
       <header className="header">
@@ -301,47 +365,149 @@ function App() {
         </div>
       </header>
       <div className="marketing-section">
-        <h2>Marketing Generator</h2>
-        <form onSubmit={handleGenerateMarketing} className="marketing-form">
-          <input
-            type="url"
-            value={marketingUrl}
-            onChange={(e) => setMarketingUrl(e.target.value)}
-            placeholder="Enter product URL..."
-            disabled={isMarketingGenerating}
-            className="marketing-url-input"
-          />
-          <select
-            value={marketingLang}
-            onChange={(e) => setMarketingLang(e.target.value)}
-            disabled={isMarketingGenerating}
-            className="marketing-lang-select"
-          >
-            <option value="sk">Slovak</option>
-            <option value="cs">Czech</option>
-            <option value="hr">Croatian</option>
-            <option value="en">English</option>
-          </select>
+        <div className="tab-selector">
           <button
-            type="submit"
-            disabled={isMarketingGenerating}
-            className="marketing-generate-btn"
+            className={activeTab === "marketing" ? "active" : ""}
+            onClick={() => setActiveTab("marketing")}
           >
-            {isMarketingGenerating ? "Generating..." : "Generate"}
+            Marketing
           </button>
-        </form>
-        {isMarketingGenerating && marketingStatus && (
-          <div className="marketing-status">
-            <div className="loading-spinner"></div>
-            <span>Status: {marketingStatus}</span>
-          </div>
+          <button
+            className={activeTab === "video" ? "active" : ""}
+            onClick={() => setActiveTab("video")}
+          >
+            Video
+          </button>
+        </div>
+        
+        {activeTab === "marketing" && (
+          <>
+            <h2>Marketing Generator</h2>
+            <form onSubmit={handleGenerateMarketing} className="marketing-form">
+              <input
+                type="url"
+                value={marketingUrl}
+                onChange={(e) => setMarketingUrl(e.target.value)}
+                placeholder="Enter product URL..."
+                disabled={isMarketingGenerating}
+                className="marketing-url-input"
+              />
+              <select
+                value={marketingLang}
+                onChange={(e) => setMarketingLang(e.target.value)}
+                disabled={isMarketingGenerating}
+                className="marketing-lang-select"
+              >
+                <option value="sk">Slovak</option>
+                <option value="cs">Czech</option>
+                <option value="hr">Croatian</option>
+                <option value="en">English</option>
+              </select>
+              <button
+                type="submit"
+                disabled={isMarketingGenerating}
+                className="marketing-generate-btn"
+              >
+                {isMarketingGenerating ? "Generating..." : "Generate"}
+              </button>
+            </form>
+            {isMarketingGenerating && marketingStatus && (
+              <div className="marketing-status">
+                <div className="loading-spinner"></div>
+                <span>Status: {marketingStatus}</span>
+              </div>
+            )}
+            {marketingResult && (
+              <div className="marketing-result">
+                <h3>Generated Marketing Content</h3>
+                <pre>{marketingResult.answer}</pre>
+              </div>
+            )}
+          </>
         )}
-        {marketingResult && (
-          <div className="marketing-result">
-            <h3>Generated Marketing Content</h3>
-            <pre>{marketingResult.answer}</pre>
-          </div>
+        
+        {activeTab === "video" && (
+          <>
+            <h2>Video Generator</h2>
+            <form onSubmit={handleGenerateVideo} className="marketing-form">
+              <input
+                type="url"
+                value={videoUrl}
+                onChange={(e) => setVideoUrl(e.target.value)}
+                placeholder="Enter product URL..."
+                disabled={isVideoGenerating}
+                className="marketing-url-input"
+              />
+              <select
+                value={videoDuration}
+                onChange={(e) => setVideoDuration(e.target.value)}
+                disabled={isVideoGenerating}
+                className="marketing-lang-select"
+              >
+                <option value="5">5 sekúnd</option>
+                <option value="10">10 sekúnd</option>
+                <option value="15">15 sekúnd</option>
+                <option value="30">30 sekúnd</option>
+              </select>
+              <select
+                value={videoLang}
+                onChange={(e) => setVideoLang(e.target.value)}
+                disabled={isVideoGenerating}
+                className="marketing-lang-select"
+              >
+                <option value="sk">Slovenčina</option>
+                <option value="en">Angličtina</option>
+                <option value="hr">Chorvátčina</option>
+              </select>
+              <button
+                type="submit"
+                disabled={isVideoGenerating}
+                className="marketing-generate-btn video-btn"
+              >
+                {isVideoGenerating ? "Generujem..." : "Generovať video"}
+              </button>
+            </form>
+            {isVideoGenerating && videoStatus && (
+              <div className="marketing-status">
+                <div className="loading-spinner"></div>
+                <span>Status: {videoStatus === "analyzing" && "Analyzujem URL..."}
+                      {videoStatus === "generating_script" && "Vytváram scenár..."}
+                      {videoStatus === "creating_video" && "Vytváram video..."}
+                      {videoStatus === "pending" && "Čakám..."}
+                      {videoStatus === "processing" && "Spracovávam..."}</span>
+              </div>
+            )}
+            {videoResult && (
+              <div className="video-result">
+                <h3>Vygenerované video</h3>
+                <p className="product-name">Produkt: {videoResult.product_name}</p>
+                <div className="video-script">
+                  <h4>Scenár:</h4>
+                  <pre>{videoResult.script}</pre>
+                </div>
+                {videoResult.video_url && (
+                  <div className="video-player">
+                    <video 
+                      controls 
+                      width="100%" 
+                      src={`${BACKEND_URL}${videoResult.video_url}`}
+                    >
+                      Váš prehliadač nepodporuje video.
+                    </video>
+                    <a 
+                      href={`${BACKEND_URL}${videoResult.video_url}`}
+                      download
+                      className="download-btn"
+                    >
+                      Stiahnuť video
+                    </a>
+                  </div>
+                )}
+              </div>
+            )}
+          </>
         )}
+        
         {error && <p className="error">{error}</p>}
       </div>
       <main className="main">
