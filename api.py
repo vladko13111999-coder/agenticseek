@@ -24,10 +24,12 @@ import concurrent.futures
 from sources.llm_provider import Provider
 from sources.interaction import Interaction
 from sources.agents import CasualAgent, CoderAgent, FileAgent, PlannerAgent, BrowserAgent
+from sources.agent_router import AgentRouter
 from sources.browser import Browser, create_driver
 from sources.utility import pretty_print
 from sources.logger import Logger
 from sources.schemas import QueryRequest, QueryResponse
+from brand_twin_api import setup_glm, generate_image
 
 load_dotenv()
 
@@ -36,6 +38,9 @@ def is_running_in_docker():
 
 api = FastAPI(title="AgenticSeek API", version="0.1.0")
 app = api  # pre kompatibilitu s existujúcimi endpointmi
+
+# Initialize agent router
+agent_router = AgentRouter()
 
 # Simple task queue
 task_queue: Dict[str, dict] = {}
@@ -460,24 +465,77 @@ async def get_latest_answer():
     return JSONResponse(status_code=404, content={"error": "No answer available"})
 @api.post("/query", response_model=QueryResponse)
 async def process_query(request: QueryRequest):
-    global is_generating, query_resp_history
+    global is_generating, query_resp_history, agent_router
     logger.info(f"Processing query: {request.query}")
+    
+    # Route the request
+    agent_type, refined_query = agent_router.route(request.query)
+    logger.info(f"Routed to: {agent_type}")
+    
+    # Handle image generation
+    if agent_type == "image":
+        img_result = generate_image(refined_query)
+        return JSONResponse(status_code=200, content={
+            "done": "true",
+            "answer": img_result.get("message", "") + "\n\n" + img_result.get("prompt", ""),
+            "reasoning": "",
+            "agent_name": "GLM-Image",
+            "success": str(img_result.get("success", True)),
+            "blocks": {},
+            "status": "Ready",
+            "uid": str(uuid.uuid4())
+        })
+    
+    # Handle video generation (placeholder)
+    if agent_type == "video":
+        return JSONResponse(status_code=200, content={
+            "done": "true",
+            "answer": f"Video generation request received: {refined_query}\n\nVideo generation will be available soon!",
+            "reasoning": "",
+            "agent_name": "LTX-Video",
+            "success": "true",
+            "blocks": {},
+            "status": "Ready",
+            "uid": str(uuid.uuid4())
+        })
+    
+    # Handle planner (placeholder)
+    if agent_type == "planner":
+        return JSONResponse(status_code=200, content={
+            "done": "true",
+            "answer": f"Planner request: {refined_query}\n\nPlanner agent will process this multi-step task.",
+            "reasoning": "",
+            "agent_name": "Planner",
+            "success": "true",
+            "blocks": {},
+            "status": "Ready",
+            "uid": str(uuid.uuid4())
+        })
+    
+    # Continue with normal casual chat
     if is_generating:
         logger.warning("Another query is being processed, please wait.")
         return JSONResponse(status_code=429, content={"error": "Another query is being processed, please wait."})
     try:
         is_generating = True
-        success = await think_wrapper(interaction, request.query)
-        if not success:
-            return JSONResponse(status_code=400, content={
-                "answer": interaction.last_answer,
-                "reasoning": interaction.last_reasoning,
-                "success": False
-            })
-        if interaction.current_agent:
-            blocks = {f'{i}': block.jsonify() for i, block in enumerate(interaction.current_agent.get_blocks_results())}
-        else:
-            blocks = {}
+        
+        # Detect language and use casual agent directly
+        detected_lang = agent_router.detect_language(request.query)
+        casual_agent = interaction.agents.get("casual")
+        if casual_agent is None:
+            casual_agent = interaction.current_agent
+        
+        interaction.last_query = request.query
+        interaction.current_agent = casual_agent
+        
+        # Process with detected language
+        casual_agent.memory.push('user', request.query)
+        answer, reasoning = await casual_agent.llm_request()
+        interaction.last_answer = answer
+        interaction.last_reasoning = reasoning
+        interaction.last_success = True
+        interaction.speak_answer()
+        blocks = {}
         query_resp = QueryResponse(
             done="true",
             answer=interaction.last_answer,
@@ -611,6 +669,27 @@ async def get_task_status(task_id: str):
     return JSONResponse(status_code=200, content=response)
 # Obsluha statických súborov
 api.mount("/static", StaticFiles(directory="static"), name="static")
+
+@api.post("/route")
+async def route_request(request: Request):
+    """Route a user request to the appropriate agent."""
+    global agent_router
+    data = await request.json()
+    query = data.get("query", "")
+    
+    if not query:
+        return JSONResponse(status_code=400, content={"error": "Query is required"})
+    
+    agent_type, refined_query = agent_router.route(query)
+    detected_lang = agent_router.detect_language(query)
+    
+    return JSONResponse(status_code=200, content={
+        "original_query": query,
+        "detected_language": detected_lang,
+        "agent_type": agent_type,
+        "refined_query": refined_query,
+        "available_agents": ["casual", "image", "video", "planner"]
+    })
 
 @api.get("/")
 async def serve_frontend():

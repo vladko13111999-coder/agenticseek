@@ -13,6 +13,7 @@ try:
     import pyaudio
     from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor, pipeline
 except ImportError:
+    pyaudio = None
     print(Fore.RED + "Speech To Text disabled." + Fore.RESET)
     IMPORT_FOUND = False
 
@@ -23,11 +24,13 @@ class AudioRecorder:
     """
     AudioRecorder is a class that records audio from the microphone and adds it to the audio queue.
     """
-    def __init__(self, format: int = pyaudio.paInt16, channels: int = 1, rate: int = 4096, chunk: int = 8192, record_seconds: int = 5, verbose: bool = False):
+    def __init__(self, format: int = 8, channels: int = 1, rate: int = 4096, chunk: int = 8192, record_seconds: int = 5, verbose: bool = False):
         self.format = format
         self.channels = channels
         self.rate = rate
         self.chunk = chunk
+        if pyaudio:
+            self.format = pyaudio.paInt16
         self.record_seconds = record_seconds
         self.verbose = verbose
         self.thread = None

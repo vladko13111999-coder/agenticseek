@@ -174,7 +174,7 @@ class Interaction:
         tmp = self.last_answer
         self.current_agent = agent
         self.is_generating = True
-        self.last_answer, self.last_reasoning = await agent.process(self.last_query, self.speech)
+        self.last_answer, self.last_reasoning = await agent.process(self.last_query, self.speech, force_lang=original_lang)
         self.is_generating = False
         
         if self.last_answer and original_lang in ["sk", "hr"]:

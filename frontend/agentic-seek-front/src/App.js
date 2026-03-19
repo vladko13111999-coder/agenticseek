@@ -5,7 +5,7 @@ import "./App.css";
 import { ThemeToggle } from "./components/ThemeToggle";
 import { ResizableLayout } from "./components/ResizableLayout";
 
-const BACKEND_URL = process.env.REACT_APP_API_URL || "http://localhost:7777";
+const BACKEND_URL = process.env.REACT_APP_API_URL || "";
 console.log("Using backend URL:", BACKEND_URL);
 
 function parseMarketingContent(text) {
@@ -233,6 +233,10 @@ function App() {
   const scrollToBottom = () => {
     messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
   };
+
+  useEffect(() => {
+    scrollToBottom();
+  }, [messages]);
 
   const toggleReasoning = (messageIndex) => {
     setExpandedReasoning((prev) => {
