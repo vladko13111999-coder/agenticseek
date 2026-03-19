@@ -519,7 +519,7 @@ async def process_query(request: QueryRequest):
     try:
         is_generating = True
         
-        # Detect language and use casual agent directly
+        # Detect language
         detected_lang = agent_router.detect_language(request.query)
         casual_agent = interaction.agents.get("casual")
         if casual_agent is None:
@@ -528,9 +528,41 @@ async def process_query(request: QueryRequest):
         interaction.last_query = request.query
         interaction.current_agent = casual_agent
         
-        # Process with detected language
-        casual_agent.memory.push('user', request.query)
-        answer, reasoning = await casual_agent.llm_request()
+        # Clear memory to prevent conversation history buildup
+        casual_agent.memory.clear()
+        
+        # Process with detected language using the process method
+        answer, reasoning = await casual_agent.process(request.query, None, force_lang=detected_lang)
+        
+        # Clean up any conversation tags from LLM response
+        import re
+        answer = re.sub(r'<\|user\|>.*?<\|assistant\|>', '', answer, flags=re.DOTALL)
+        answer = re.sub(r'<\|user\|>', '', answer)
+        answer = re.sub(r'<\|assistant\|>', '', answer)
+        answer = answer.strip()
+        
+        # Remove repeating patterns - keep only unique lines
+        lines = answer.split('\n')
+        unique_lines = []
+        seen_prefixes = set()
+        for line in lines:
+            line = line.strip()
+            if not line:
+                continue
+            # Get first 30 chars as key for deduplication
+            prefix = line[:40].lower()
+            if prefix not in seen_prefixes:
+                seen_prefixes.add(prefix)
+                unique_lines.append(line)
+        answer = '\n'.join(unique_lines[:3])  # Max 3 lines
+        
+        # If still too long, truncate at first sentence end
+        if len(answer) > 300:
+            # Find last sentence boundary
+            last_period = answer[:300].rfind('. ')
+            if last_period > 50:
+                answer = answer[:last_period + 2]
+        
         interaction.last_answer = answer
         interaction.last_reasoning = reasoning
         interaction.last_success = True
