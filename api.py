@@ -551,8 +551,8 @@ async def process_query(request: QueryRequest):
         interaction.last_query = request.query
         interaction.current_agent = casual_agent
         
-        # Clear memory to prevent conversation history buildup
-        casual_agent.memory.clear()
+        # Keep memory for conversation history - DO NOT clear
+        # casual_agent.memory.clear() - REMOVED for conversation continuity
         
         # Process with detected language using the process method
         answer, reasoning = await casual_agent.process(request.query, None, force_lang=detected_lang)
