@@ -505,7 +505,7 @@ async def process_query(request: QueryRequest):
             "reasoning": "",
             "agent_name": "GLM-Image",
             "success": str(img_result.get("success", True)),
-            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
+            
             "image_base64": img_result.get("image_base64", "") if img_result else "",
             "status": "Ready",
             "uid": str(uuid.uuid4())
@@ -520,7 +520,7 @@ async def process_query(request: QueryRequest):
             "reasoning": "",
             "agent_name": "Video-SVD",
             "success": str(video_result.get("success", False)),
-            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
+            
             "status": "Ready",
             "uid": str(uuid.uuid4())
         })
@@ -533,7 +533,7 @@ async def process_query(request: QueryRequest):
             "reasoning": "",
             "agent_name": "Planner",
             "success": "true",
-            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
+            
             "status": "Ready",
             "uid": str(uuid.uuid4())
         })
