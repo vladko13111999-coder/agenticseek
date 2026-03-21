@@ -39,6 +39,20 @@ def is_running_in_docker():
 api = FastAPI(title="AgenticSeek API", version="0.1.0")
 app = api  # pre kompatibilitu s existujúcimi endpointmi
 
+# CORS middleware for Tvojton frontend
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=[
+        "https://tvojton.online",
+        "https://www.tvojton.online",
+        "http://localhost:3000",
+        "http://localhost:5173",
+    ],
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
+
 # Initialize agent router
 agent_router = AgentRouter()
 
