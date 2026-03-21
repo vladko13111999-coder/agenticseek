@@ -1,6 +1,60 @@
-# Development Notes
+# Development Notes - agenticseek
 
 ## 📌 Projekt Status - Sat Mar 21 2026
+
+---
+
+## 🚀 PRODUKČNÉ NASTAVENIE (RUNPOD)
+
+### DÔLEŽITÉ - Po resete RunPod!
+
+Po resete containeru na RunPod je potrebné znova nainštalovať všetko:
+
+```bash
+# 1. INŠTALÁCIA OLLAMA
+curl -fsSL https://ollama.com/install.sh | sh
+
+# 2. STAHOVANIE MODELOV (celkom ~15GB)
+ollama pull gemma3:12b    # Pre casual chat (Brand Twin) - ~7GB
+ollama pull qwen2.5:14b   # Pre vyhľadávanie, obrázky, videá - ~8GB
+
+# 3. OVERENIE
+ollama list
+# Malo by ukázať:
+# gemma3:12b
+# qwen2.5:14b
+
+# 4. SPUSTENIE OLLAMA DAEMON
+ollama serve &
+# Alebo nastaviť ako service
+
+# 5. INŠTALÁCIA CHROMIUM (pre web browsing agenta)
+apt-get update && apt-get install -y chromium-browser chromium-chromedriver
+
+# 6. INŠTALÁCIA PYTHON závislostí
+pip3 install -r requirements.txt
+
+# 7. SPUSTENIE API
+cd ~/agenticseek
+python3 api.py
+# API beží na http://0.0.0.0:7777
+```
+
+### RunPod Konfigurácia
+
+| Nastavenie | Hodnota |
+|------------|---------|
+| Exposed HTTP Ports | 7777, 3000 |
+| Environment Variables | WORK_DIR=/tmp/agenticseek |
+| GPU | NVIDIA L40 (45GB VRAM) |
+
+### CORS Nastavenia
+
+API povoluje prístup z:
+- https://tvojton.online
+- https://www.tvojton.online
+- http://localhost:3000
+- http://localhost:5173
 
 ---
 
@@ -12,124 +66,167 @@
 - **Model:** gemma3:12b (dokým nebude GaMS3)
 - **Identita:** Reprezentuje tvojton.online
 
-### Čo bolo zmenené:
+### Brand Twin Osobnosť
+- Priateľský, suchý humor (anglický štýl)
+- Pri vážnych veciach (reklamácie, problémy) - profesionálny, bez humoru
+- Nikdy vulgárny alebo sarkastický na úkor používateľa
+- Odpovedá v jazyku používateľa
 
-#### 1. `prompts/base/casual_agent.txt` - Brand Twin osobnosť
-- Pridaná oficiálna Brand Twin identita
-- Pridaný suchý humor (anglický štýl)
-- Pridané CZ príklady a pravidlá
-- Pridané príklady humoru pre vážne situácie
+### Suchý Humor Príklady
+```
+User: "Môžeš mi pomôcť s reklamáciou?"
+Agent: "Samozrejme, reklamácie sú moja obľúbená zábava. Ale poďme na to."
 
-#### 2. `sources/agent_router.py` - Vylepšená detekcia jazykov
-- Rozšírená detekcia SK (slovenčina) - 14 slov
-- Rozšírená detekcia CS (čeština) - 16 slov
-- Rozšírená detekcia HR (chorvátčina) - 13 slov
-- Rozšírená detekcia EN (angličtina) - 14 slov
-- Zlepšený algoritmus rozpoznávania podobných jazykov (SK vs CS)
-
-#### 3. `config.ini`
-- Pridaný `cz` do zoznamu jazykov
+User: "Si nejaký iný ako ostatní chatboti?"
+Agent: "Iný? Povedzme, že neopakujem stále dokola 'Ako vám dnes môžem pomôcť?'. To by ma nudilo."
+```
 
 ---
 
-## ✅ FUNKČNÉ VECI (Working Features)
+## 📁 ŠTRUKTÚRA PROJEKTU
 
----
-
-## ✅ FUNKČNÉ VECI (Working Features)
-
-### Agent Router (`sources/agent_router.py`)
-- Automaticky smeruje požiadavky na správneho agenta
-- Podporované agenty: `casual` (chat), `image`, `video`, `planner`
-- Detekcia jazyka: slovenčina (sk), angličtina (en), chorvátčina (hr), čeština (cs)
-- Funguje správne
-
-### Chat Funkcionalita (`api.py`)
-- `/query` endpoint funguje
-- Language detection funguje (používa `force_lang` parameter)
-- Pamäť sa čistí medzi správami (prevencia duplikácie histórie)
-- Odpovede sa deduplikujú (max 3 riadky, 300 znakov)
-- Tagy `<|user|>/<|assistant|>` sa odstraňujú z odpovedí
-
-### Chrome/Selenium (`sources/browser.py`)
-- Opravené Chrome options pre headless/container prostredie
-- Pridané: `--disable-software-rasterizer`, `--disable-extensions`, atď.
-- API štartuje bez Chrome chýb
-
-### Frontend (`frontend/agentic-seek-front/`)
-- React app s Marketing a Video tabmi
-- `/static` servuje skompilované súbory
-- Chat interface funguje
-
-### Brand Twin API (`brand_twin_api.py`)
-- Integrácia s GLM/Ollama na generovanie obrázkov
-- Vytvorený nový súbor
-
----
-
-## ⚠️ PROBLÉMY KTORÉ TREBA OPRAVIŤ
-
-### 1. LLM Model gams3:12b - Jazykové miešanie
-- **Problém:** Model občas mieša jazyky v odpovediach (hlavne čeština)
-- **Príčina:** Model nedostatočne rešpektuje prompt inštrukcie
-- **Riešenie:** Možno treba lepší model alebo iný prístup k lang detection
-
-### 2. Translation modely - torch.load chyba
 ```
-Failed to load en-sk: Due to a serious vulnerability issue in torch.load...
+agenticseek/
+├── api.py                      # Main FastAPI server (port 7777)
+├── config.ini                  # Konfigurácia modelov a jazykov
+├── requirements.txt            # Python dependencies
+├── .env                        # Environment variables
+├── sources/
+│   ├── agent_router.py         # Request routing & language detection
+│   ├── browser.py              # Chrome/Selenium setup
+│   ├── llm_provider.py         # LLM provider (Ollama)
+│   └── agents/
+│       └── casual_agent.py     # Brand Twin chat agent
+├── prompts/base/
+│   └── casual_agent.txt        # Brand Twin prompt
+├── frontend/                   # (deprecated, používa sa Tvojton-)
+└── brand_twin_api.py           # Image generation
 ```
-- **Problém:** Helsinki-NLP a M2M100 modely sa nenačítajú
-- **Príčina:** torch verzia < 2.6 má CVE zraniteľnosť
-- **Stav:** Predexistujúci problém,不影响 základnú funkčnosť
-- **Treba:** Upgrade torch na >= 2.6
-
-### 3. Speech-to-Text (PyAudio)
-```
-Could not import the PyAudio C module '_portaudio'.
-Speech To Text disabled.
-```
-- **Problém:** PyAudio nie je nainštalované
-- **Stav:** STT je disabled, API funguje bez neho
 
 ---
 
 ## 🔧 KONFIGURÁCIA
 
-```
-Provider: ollama
-Model: gams3:12b  
-Server: 127.0.0.1:11434
-API Port: 7777
-```
+### config.ini
+```ini
+[MAIN]
+provider_name = ollama
+provider_model = gemma3:12b
+provider_server_address = http://localhost:11434
+languages = sk,cs,hr,en
 
-## 📁 DÔLEŽITÉ SÚBORY
-
-| Súbor | Popis |
-|-------|-------|
-| `api.py` | Main FastAPI server |
-| `sources/agent_router.py` | Request routing & language detection |
-| `sources/browser.py` | Chrome/Selenium setup |
-| `brand_twin_api.py` | Image generation |
-| `prompts/base/casual_agent.txt` | Chat prompt |
-| `frontend/agentic-seek-front/` | React frontend |
-
-## 🚀 AKO ŠTARTOVAŤ
-
-```bash
-cd ~/agenticseek
-python api.py
-# API beží na http://0.0.0.0:7777
+[AGENTS]
+casual_model = gemma3:12b
+image_model = qwen2.5:14b
+video_model = qwen2.5:14b
+planner_model = gemma3:12b
 ```
 
-## 📝 COMMITY DNEŠNÉHO DŇA
-
-| Commit | Popis |
-|--------|-------|
-| `4d910de` | feat: update API, frontend routing, casual agent and UI changes |
-| `ec6962a` | fix: add Chrome options for container/headless environment |
-| `597125d` | fix: improve chat language detection, memory management and response quality |
+### .env
+```env
+WORK_DIR=/tmp/agenticseek
+DOCKER_INTERNAL_URL=http://localhost
+```
 
 ---
 
-**Posledná aktualizácia:** 2026-03-21 14:00 UTC  
+## ✅ FUNKČNÉ VECI
+
+### Agent Router (`sources/agent_router.py`)
+- Automaticky smeruje požiadavky na správneho agenta
+- Podporované agenty: `casual` (chat), `image`, `video`, `planner`
+- Detekcia jazyka: SK, CS, HR, EN
+- Rozšírená detekcia s porovnávaním podobných jazykov (SK vs CS)
+
+### API Endpoints
+| Endpoint | Metóda | Popis |
+|----------|--------|-------|
+| `/health` | GET | Zdravie API |
+| `/query` | POST | Poslať správu chatbotovi |
+| `/models` | GET | Zoznam dostupných modelov |
+
+### CORS
+Povolené origins:
+- tvojton.online
+- www.tvojton.online
+- localhost:3000, localhost:5173
+
+---
+
+## ⚠️ ZNÁME PROBLÉMY
+
+### 1. Translation modely (neblokujúce)
+```
+Failed to load en-sk: Due to a serious vulnerability issue in torch.load...
+```
+- Modely Helsinki-NLP a M2M100 sa nenačítajú
+- Príčina: torch verzia < 2.6 má CVE zraniteľnosť
+- **Riešenie:** Upgrade torch na >= 2.6 (voliteľné)
+
+### 2. Speech-to-Text (neblokujúce)
+```
+Could not import the PyAudio C module '_portaudio'.
+Speech To Text disabled.
+```
+- STT je disabled, API funguje bez neho
+
+### 3. Chrome/Chromedriver
+- Potrebné nainštalovať chromium-browser a chromium-chromedriver
+- Ak nie je nainštalovaný, browser agent sa preskočí (graceful fallback)
+
+---
+
+## 🚀 SPUSTENIE API
+
+```bash
+# Základné spustenie
+cd ~/agenticseek
+python3 api.py
+
+# S GPU akceleráciou (automaticky detekované)
+python3 api.py
+
+# API beží na http://0.0.0.0:7777
+```
+
+### Testovanie
+```bash
+# Health check
+curl http://localhost:7777/health
+
+# Test chat
+curl -X POST http://localhost:7777/query \
+  -H "Content-Type: application/json" \
+  -d '{"query": "Ahoj, ako sa máš?"}'
+```
+
+---
+
+## 📋 CHECKLIST PO RESETE
+
+- [ ] nainštalovať Ollama
+- [ ] stiahnuť gemma3:12b
+- [ ] stiahnuť qwen2.5:14b
+- [ ] nainštalovať chromium-browser
+- [ ] nainštalovať chromium-chromedriver
+- [ ] spustiť ollama serve
+- [ ] spustiť python api.py
+- [ ] overiť /health endpoint
+- [ ] otestovať chat v SK/CZ/HR/EN
+
+---
+
+## 📝 COMMITY
+
+| Commit | Popis |
+|--------|-------|
+| `5057cfa` | feat: Add CORS middleware for tvojton.online |
+| `8a00015` | feat: Brand Twin multilingual support (SK, CZ, HR, EN) |
+| `4d910de` | feat: update API, frontend routing, casual agent |
+| `ec6962a` | fix: add Chrome options for container/headless |
+| `597125d` | fix: improve chat language detection |
+
+---
+
+**Posledná aktualizácia:** 2026-03-21 16:00 UTC  
 **Branch:** main
