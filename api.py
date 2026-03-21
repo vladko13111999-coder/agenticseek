@@ -29,7 +29,7 @@ from sources.browser import Browser, create_driver
 from sources.utility import pretty_print
 from sources.logger import Logger
 from sources.schemas import QueryRequest, QueryResponse
-from brand_twin_api import setup_glm, generate_image
+from brand_twin_api import setup_glm, generate_image, generate_video
 
 load_dotenv()
 
@@ -508,14 +508,15 @@ async def process_query(request: QueryRequest):
             "uid": str(uuid.uuid4())
         })
     
-    # Handle video generation (placeholder)
+    # Handle video generation
     if agent_type == "video":
+        video_result = generate_video(refined_query)
         return JSONResponse(status_code=200, content={
             "done": "true",
-            "answer": f"Video generation request received: {refined_query}\n\nVideo generation will be available soon!",
+            "answer": video_result.get("message", "") + "\n\nPrompt: " + video_result.get("prompt", refined_query),
             "reasoning": "",
             "agent_name": "LTX-Video",
-            "success": "true",
+            "success": str(video_result.get("success", False)),
             "blocks": {},
             "status": "Ready",
             "uid": str(uuid.uuid4())
