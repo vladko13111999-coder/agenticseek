@@ -26,10 +26,12 @@ from sources.interaction import Interaction
 from sources.agents import CasualAgent, CoderAgent, FileAgent, PlannerAgent, BrowserAgent
 from sources.agent_router import AgentRouter
 from sources.browser import Browser, create_driver
+from web_browser import analyze_website
 from sources.utility import pretty_print
 from sources.logger import Logger
 from sources.schemas import QueryRequest, QueryResponse
-from brand_twin_api import setup_glm, generate_image, generate_video
+from brand_twin_api import setup_glm, generate_image
+from video_generator import generate_video
 
 load_dotenv()
 
@@ -503,7 +505,8 @@ async def process_query(request: QueryRequest):
             "reasoning": "",
             "agent_name": "GLM-Image",
             "success": str(img_result.get("success", True)),
-            "blocks": {},
+            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
+            "image_base64": img_result.get("image_base64", "") if img_result else "",
             "status": "Ready",
             "uid": str(uuid.uuid4())
         })
@@ -515,9 +518,9 @@ async def process_query(request: QueryRequest):
             "done": "true",
             "answer": video_result.get("message", "") + "\n\nPrompt: " + video_result.get("prompt", refined_query),
             "reasoning": "",
-            "agent_name": "LTX-Video",
+            "agent_name": "Video-SVD",
             "success": str(video_result.get("success", False)),
-            "blocks": {},
+            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
             "status": "Ready",
             "uid": str(uuid.uuid4())
         })
@@ -530,7 +533,7 @@ async def process_query(request: QueryRequest):
             "reasoning": "",
             "agent_name": "Planner",
             "success": "true",
-            "blocks": {},
+            "blocks": {}, "video_base64": video_result.get("video_base64", ""),
             "status": "Ready",
             "uid": str(uuid.uuid4())
         })
@@ -589,6 +592,12 @@ async def process_query(request: QueryRequest):
         interaction.last_answer = answer
         interaction.last_reasoning = reasoning
         interaction.last_success = True
+        
+        # Save conversation memory
+        casual_agent.memory.push('user', request.query)
+        casual_agent.memory.push('assistant', answer)
+        casual_agent.memory.save_memory('casual_agent')
+        
         interaction.speak_answer()
         blocks = {}
         query_resp = QueryResponse(
@@ -658,7 +667,7 @@ async def generate(request: Request):
     })
 
 @api.post("/generate_video")
-async def generate_video(request: Request):
+async def video_generate_endpoint(request: Request):
     """Generate video from product URL"""
     global interaction
     if interaction is None:
