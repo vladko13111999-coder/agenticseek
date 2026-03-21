@@ -36,6 +36,13 @@
 - **URL:** https://tvojton.online/agent
 - **Vercel Project ID:** prj_Txp8DZDU9FyR6iv9yR6wSUJciCYR
 
+### 1.3 OpenClaw (Orchestrátor)
+- **GitHub:** https://github.com/openclaw/openclaw
+- **Verzia:** 2026.3.14
+- **Lokalita:** /teamspace/studios/this_studio/openclaw
+- **Port:** 18789 (gateway, local mode)
+- **Node.js:** vyžaduje >=22.16.0 (aktuálne používané: 22.22.1)
+
 ---
 
 ## 2. Dôležité URL
@@ -46,6 +53,8 @@
 | **API Backend** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai |
 | **API Health** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/health |
 | **API Query** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query |
+| **OpenClaw Gateway** | ws://localhost:18789 |
+| **OpenClaw Health** | http://localhost:18789/health |
 
 ---
 
@@ -83,7 +92,60 @@ https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai
 
 ---
 
-## 4. Inštalované Modely (Ollama)
+## 4. OpenClaw Orchestrátor
+
+### 4.1 Konfigurácia
+
+OpenClaw je nakonfigurovaný pre orchestráciu Brand Twin AI:
+- **Gateway port:** 18789
+- **Mode:** local (loopback bind)
+- **Default model:** ollama/gemma3:12b
+- **Auth profile:** ollama:default (nakonfigurovaný v auth-profiles.json)
+
+### 4.2 Spustenie OpenClaw
+
+```bash
+# Nastavenie Node.js 22.22.1 (vyžadované >=22.16.0)
+unset npm_config_prefix
+export PATH="/teamspace/studios/this_studio/.nvm/versions/node/v22.22.1/bin:$PATH"
+
+# Spustenie gateway
+cd /teamspace/studios/this_studio/openclaw
+node dist/index.js gateway run --bind loopback --port 18789
+```
+
+### 4.3 Overenie statusu
+
+```bash
+# Health check
+curl http://localhost:18789/health
+
+# Model status
+cd /teamspace/studios/this_studio/openclaw
+node dist/index.js models status
+```
+
+### 4.4 Auth Profile pre Ollama
+
+Auth profile je uložený v: `~/.openclaw/agents/main/agent/auth-profiles.json`
+
+Obsahuje:
+```json
+{
+  "version": 1,
+  "profiles": {
+    "ollama:default": {
+      "type": "api_key",
+      "provider": "ollama",
+      "key": "ollama-local-placeholder-key-2026"
+    }
+  }
+}
+```
+
+---
+
+## 5. Inštalované Modely (Ollama)
 
 | Model | Veľkosť | Použitie |
 |-------|---------|----------|
@@ -98,9 +160,9 @@ ollama rm <model>            # Vymazať model
 
 ---
 
-## 5. API Endpoints
+## 6. API Endpoints
 
-### 5.1 /health
+### 6.1 /health
 ```bash
 curl https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/health
 ```
@@ -109,7 +171,7 @@ curl https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/health
 {"status":"healthy","version":"1.0.0","provider":"ollama"}
 ```
 
-### 5.2 /query
+### 6.2 /query
 ```bash
 curl -X POST https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query \
   -H "Content-Type: application/json" \
@@ -131,7 +193,7 @@ curl -X POST https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query 
 
 ---
 
-## 6. Kľúčové Súbory
+## 7. Kľúčové Súbory
 
 ### Backend (/agenticseek)
 
@@ -152,7 +214,7 @@ curl -X POST https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query 
 
 ---
 
-## 7. Konfigurácia Vercel
+## 8. Konfigurácia Vercel
 
 ### Environment Variables (nastavené)
 ```
@@ -179,7 +241,7 @@ git commit --allow-empty -m "Redeploy" && git push origin main
 
 ---
 
-## 8. Predchádzajúca Infraštruktúra (historické)
+## 9. Predchádzajúca Infraštruktúra (historické)
 
 ### RunPod (už nepoužívané)
 - **Server:** RunPod (pozri starú dokumentáciu)
@@ -187,7 +249,7 @@ git commit --allow-empty -m "Redeploy" && git push origin main
 
 ---
 
-## 9. Troubleshooting
+## 10. Troubleshooting
 
 ### API nedostupné
 ```bash
@@ -224,7 +286,7 @@ curl http://localhost:11434/api/tags
 
 ---
 
-## 10. Credentials a Tokens
+## 11. Credentials a Tokens
 
 ### Svetlé (uložené v dokumentácii)
 - **GitHub:** vladko13111999-coder
@@ -238,7 +300,7 @@ curl http://localhost:11434/api/tags
 
 ---
 
-## 11. Štruktúra Kódu
+## 12. Štruktúra Kódu
 
 ```
 /teamspace/studios/this_studio/
@@ -267,7 +329,7 @@ curl http://localhost:11434/api/tags
 
 ---
 
-## 12. Rýchly Štart (Pristupenie k projektu)
+## 13. Rýchly Štart (Pristupenie k projektu)
 
 ```bash
 # 1. Klonovať repozitáre
@@ -297,7 +359,7 @@ git add . && git commit -m "zmena" && git push
 
 ---
 
-## 13. Budúce Vylepšenia
+## 14. Budúce Vylepšenia
 
 1. **Generovanie obrázkov** - Stable Diffusion integrácia
 2. **Generovanie videí** - Stable Video Diffusion
