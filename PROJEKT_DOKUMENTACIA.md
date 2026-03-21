@@ -1,310 +1,311 @@
 # Brand Twin AI - Kompletná Dokumentácia
 
-## Prehľad Projektov
+**Posledná aktualizácia:** 21.03.2026
+**Verzia:** 2.0
 
-Máme 2 hlavné repozitáre:
-1. **agenticseek** - Backend API (RunPod server)
-2. **Tvojton-** - Frontend (Vercel deployment)
+---
+
+## Rýchly Prehľad
+
+**Projekt:** Brand Twin AI asistent pre tvojton.online
+**Účel:** AI chat bot pre e-shopy a malé firmy (komunikácia, SEO, reklamácie)
+**Jazyky:** Slovenčina, Čeština, Chorvatčina, Angličtina
+
+### Architektúra
+```
+┌─────────────────┐     ┌─────────────────┐     ┌─────────────────┐
+│   Frontend      │────▶│   API Backend   │────▶│     Ollama      │
+│  (tvojton.online)     │  (Lightning.ai) │     │  (gemma3:12b)  │
+└─────────────────┘     └─────────────────┘     └─────────────────┘
+      Vercel                  Port 7777           Lightning Studio
+```
 
 ---
 
 ## 1. Repozitáre
 
-### agenticseek (Backend)
-- **GitHub**: https://github.com/vladko13111999-coder/agenticseek
-- **Server**: RunPod (pozri .env pre SSH credentials)
-- **API URL**: pozri .env
-- **Port**: 7777
+### 1.1 agenticseek (Backend API)
+- **GitHub:** https://github.com/vladko13111999-coder/agenticseek
+- **Platforma:** Lightning.ai Studios
+- **Studio URL:** https://lightning.ai/vladko13111999/intelligent-agent-platform-project/studios/consistent-fuchsia-cseqj
+- **Cloudspace ID:** 01km8p7wqj629zs2hpb8sc2bya
 
-### Tvojton- (Frontend)
-- **GitHub**: https://github.com/vladko13111999-coder/Tvojton-
-- **URL**: https://tvojton.online/agent
-
----
-
-## 2. Spustenie Backend
-
-```bash
-# SSH na RunPod
-ssh -i /tmp/runpod_key -p 52213 root@IP_ADRESA  # pozri .env
-
-# Ísť do adresára
-cd /agenticseek
-
-# Aktivovať virtual env
-source venv/bin/activate
-
-# Spustiť API
-OLLAMA_HOST=http://localhost:11434 python api.py
-```
-
-### Spustenie Telegram Bota (samostatne)
-```bash
-cd /agenticseek
-source venv/bin/activate
-python telegram_bot.py
-```
+### 1.2 Tvojton- (Frontend)
+- **GitHub:** https://github.com/vladko13111999-coder/Tvojton-
+- **Platforma:** Vercel
+- **URL:** https://tvojton.online/agent
+- **Vercel Project ID:** prj_Txp8DZDU9FyR6iv9yR6wSUJciCYR
 
 ---
 
-## 3. Inštalované Modely
+## 2. Dôležité URL
+
+| Služba | URL |
+|--------|-----|
+| **Frontend (Vercel)** | https://tvojton.online/agent |
+| **API Backend** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai |
+| **API Health** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/health |
+| **API Query** | https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query |
+
+---
+
+## 3. Spustenie Backend (Lightning.ai Studio)
+
+### 3.1 Automatické spustenie (odporúčané)
+
+Studio má nastavený `on_start.sh` ktorý automaticky spustí:
+1. Ollama server (port 11434)
+2. Brand Twin API (port 7777)
+
+### 3.2 Manuálne spustenie
+
+```bash
+# 1. Spustiť Ollama
+export OLLAMA_HOST=0.0.0.0:11434
+ollama serve &
+
+# 2. Spustiť API
+cd /teamspace/studios/this_studio/agenticseek
+python simple_api.py
+```
+
+### 3.3 Port Forwarding na Lightning.ai
+
+Pre prístup k API z externe:
+1. Otvor studio v prehliadači: https://lightning.ai/.../studios/...
+2. Klikni na **Ports** alebo **Forward Port** v UI
+3. Alebo použi priamu URL: `https://<PORT>-<CLOUDSPACE_ID>.cloudspaces.litng.ai`
+
+**Verejná URL pre port 7777:**
+```
+https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai
+```
+
+---
+
+## 4. Inštalované Modely (Ollama)
 
 | Model | Veľkosť | Použitie |
 |-------|---------|----------|
-| qwen2.5:14b | 9.0 GB | Hlavný LLM |
-| gemma3:12b | 8.1 GB | Chat |
-| x/flux2-klein | 5.7 GB | Multimodal (obrázky) |
-| Stable Diffusion 1.5 | - | Generovanie obrázkov |
-| Stable Video Diffusion XT | - | Generovanie videí |
+| gemma3:12b | 8.1 GB | Hlavný chat model |
 
----
-
-## 4. Kľúčové Súbory
-
-### Backend (/agenticseek)
-
-| Súbor | Popis |
-|-------|-------|
-| `api.py` | Hlavný FastAPI server |
-| `brand_twin_api.py` | Stable Diffusion pre obrázky |
-| `video_generator.py` | Stable Video Diffusion pre videá |
-| `web_browser.py` | Playwright pre web browsing |
-| `telegram_bot.py` | Telegram bot |
-| `sources/agent_router.py` | Routing požiadaviek |
-| `.env` | API kľúče a tokeny |
-
-### Frontend (/Tvojton-/client)
-
-| Súbor | Popis |
-|-------|-------|
-| `src/pages/Agent.tsx` | Hlavná stránka agenta |
-| `src/components/AIChatBox.tsx` | Komponent chatu |
-| `src/lib/agentApi.ts` | API klient |
+**Príkazy pre správu modelov:**
+```bash
+ollama list                    # Zobraziť modely
+ollama pull <model>           # Stiahnuť model
+ollama rm <model>            # Vymazať model
+```
 
 ---
 
 ## 5. API Endpoints
 
-| Endpoint | Metóda | Popis |
-|----------|--------|-------|
-| `/query` | POST | Hlavný endpoint pre AI |
-| `/health` | GET | Zdravotná kontrola |
-| `/generate` | POST | Marketing generovanie |
-| `/generate_video` | POST | Video generovanie |
-
-### Príklad /query
+### 5.1 /health
 ```bash
-curl -X POST "API_URL/query" \
+curl https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/health
+```
+**Odpoveď:**
+```json
+{"status":"healthy","version":"1.0.0","provider":"ollama"}
+```
+
+### 5.2 /query
+```bash
+curl -X POST https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai/query \
   -H "Content-Type: application/json" \
   -d '{"query": "Ahoj, ako sa máš?"}'
 ```
-
-### Odpoveď
+**Odpoveď:**
 ```json
 {
   "done": "true",
-  "answer": "Ahoj! Mam sa dobre, dakujem.",
-  "image_base64": "...",
-  "video_base64": "...",
-  "agent_name": "casual"
+  "answer": "Ahoj! Mám sa dobre, ďakujem za opýtanie!",
+  "reasoning": "",
+  "agent_name": "TvojTon",
+  "success": "true",
+  "blocks": {},
+  "status": "Ready",
+  "uid": "test-123"
 }
 ```
 
 ---
 
-## 6. Funkcie Agenta
+## 6. Kľúčové Súbory
 
-### 6.1 Chat s pamäťou
-- Konverzačná pamäť medzi správami
-- Pamäť sa ukladá do súboru
-- Jazyková detekcia (SK/CZ/EN)
+### Backend (/agenticseek)
 
-### 6.2 Generovanie obrázkov
-- **Model**: Stable Diffusion 1.5
-- **Endpoint**: Automaticky detekované kľúčovými slovami
-- **Keywords**: "vygeneruj obrázok", "sprav obrázok", "generuj"
-- Výstup: base64 encoded PNG
+| Súbor | Popis |
+|-------|-------|
+| `simple_api.py` | Zjednodušený FastAPI server (aktívny) |
+| `api.py` | Pôvodný komplexný API server |
+| `config.ini` | Konfigurácia (model, porty, agenty) |
+| `.env` | API kľúče a tokeny |
+| `on_start.sh` | Automatické spustenie pri štarte |
 
-### 6.3 Generovanie videí
-- **Model**: Stable Video Diffusion XT
-- **Typ**: Image-to-video (najprv obrázok, potom video)
-- **Keywords**: "vygeneruj video", "sprav video", "vytvor klip"
-- Výstup: base64 encoded MP4
+### Frontend (/Tvojton-/client)
 
-### 6.4 Web browsing
-- **Technológia**: Playwright + Chromium
-- **Súbor**: `web_browser.py`
-- Používa sa pre analýzu URL
+| Súbor | Popis |
+|-------|-------|
+| `src/lib/agentApi.ts` | API klient - TU NASTAV VITE_API_URL |
+| `src/components/BrandTwinChat.tsx` | Hlavný chat komponent |
 
 ---
 
-## 7. Telegram Bot
+## 7. Konfigurácia Vercel
 
-### Konfigurácia
-- Token nájdeš v `.env` subore
-- Bot username pozri u @BotFather
+### Environment Variables (nastavené)
+```
+VITE_API_URL = https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai
+```
 
-### Príkazy
-- `/start` - Úvodná správa
-- `/help` - Pomoc
-- `/newchat` - Nový rozhovor
-
-### Spustenie
+### Zmena Vercel Environment Variable
 ```bash
-cd /agenticseek
-source venv/bin/activate
-python telegram_bot.py
+VERCEL_TOKEN="vcp_..."
+PROJECT_ID="prj_Txp8DZDU9FyR6iv9yR6wSUJciCYR"
+ENV_ID="RCedGALm2koQIyIP"
+
+curl -X PATCH "https://api.vercel.com/v6/projects/${PROJECT_ID}/env/${ENV_ID}" \
+  -H "Authorization: Bearer $VERCEL_TOKEN" \
+  -H "Content-Type: application/json" \
+  -d '{"value": "https://NOVA-URL", "target": ["production", "preview", "development"]}'
+```
+
+### Trigger Redeploy
+```bash
+cd Tvojton-
+git commit --allow-empty -m "Redeploy" && git push origin main
 ```
 
 ---
 
-## 8. Deploy na Vercel
+## 8. Predchádzajúca Infraštruktúra (historické)
 
+### RunPod (už nepoužívané)
+- **Server:** RunPod (pozri starú dokumentáciu)
+- **API URL:** https://ii5nrun0ci2ahz-7777.proxy.runpod.net
+
+---
+
+## 9. Troubleshooting
+
+### API nedostupné
 ```bash
-cd /tmp/Tvojton-
-npx vercel --prod --token VERCEL_TOKEN  # pozri .env subor
+# 1. Skontrolovať či beží
+ps aux | grep python | grep simple_api
+
+# 2. Reštartovať API
+pkill -f simple_api
+cd /teamspace/studios/this_studio/agenticseek
+nohup python simple_api.py > simple_api.log 2>&1 &
+
+# 3. Skontrolovať logy
+cat /teamspace/studios/this_studio/agenticseek/simple_api.log
+```
+
+### Ollama nefunguje
+```bash
+# 1. Skontrolovať či beží
+ps aux | grep ollama | grep -v grep
+
+# 2. Reštartovať
+pkill -f ollama
+export OLLAMA_HOST=0.0.0.0:11434
+ollama serve &
+
+# 3. Test
+curl http://localhost:11434/api/tags
+```
+
+### Frontend sa nepripája k API
+1. Skontrolovať CORS v `simple_api.py`
+2. Skontrolovať `VITE_API_URL` vo Vercel environment variables
+3. Trigger redeploy
+
+---
+
+## 10. Credentials a Tokens
+
+### Svetlé (uložené v dokumentácii)
+- **GitHub:** vladko13111999-coder
+- **Vercel Team ID:** team_t6c658eNPFC3jN1uyx5dbsLQ
+- **Vercel Project ID:** prj_Txp8DZDU9FyR6iv9yR6wSUJciCYR
+
+### Tajné (v .env súboroch)
+- **Vercel Token:** `vcp_...` (pozri Vercel dashboard)
+- **GitHub Token:** `ghp_...` (pozri GitHub settings)
+- **Lightning.ai Token:** UUID formát (pozri Lightning settings)
+
+---
+
+## 11. Štruktúra Kódu
+
+```
+/teamspace/studios/this_studio/
+├── agenticseek/              # Backend repo
+│   ├── simple_api.py         # Jednoduchý FastAPI server
+│   ├── api.py                # Pôvodný komplexný server
+│   ├── config.ini            # Konfigurácia
+│   ├── .env                  # Environment variables
+│   ├── sources/              # Zdrojové súbory
+│   │   ├── agents/          # AI agenty
+│   │   ├── llm_provider.py  # LLM provider
+│   │   └── agent_router.py  # Routing
+│   └── on_start.sh          # Auto-spustenie
+│
+├── Tvojton-/                 # Frontend repo
+│   ├── client/              # Next.js/Vite frontend
+│   │   ├── src/lib/agentApi.ts  # API klient
+│   │   └── .env.production  # Production env
+│   ├── server/              # Backend server (ak treba)
+│   └── vercel.json          # Vercel konfigurácia
+│
+└── .lightning_studio/       # Lightning.ai konfigurácia
+    ├── on_start.sh          # Auto-spustenie služieb
+    └── .studiorc             # Studio settings
 ```
 
 ---
 
-## 9. Agent Router
+## 12. Rýchly Štart (Pristupenie k projektu)
 
-Súbor: `sources/agent_router.py`
-
-### Kľúčové slová pre routing:
-
-**Image keywords:**
-- vygeneruj.*obrázok, sprav.*obrázok, generate.*image, create.*picture, nakresli, namaluj
-
-**Video keywords:**
-- sprav.*video, vygeneruj.*video, vytvor.*klip, make.*video, animuj
-
-**Planner keywords:**
-- nájdi.*a, vyhľadaj.*a.*zhrň, find.*and, research, analyze
-
----
-
-## 10. Známe Problémy a Riešenia
-
-### Problém: API nedostupné
 ```bash
-# Reštart API
-pkill -9 python
-cd /agenticseek
-source venv/bin/activate
-OLLAMA_HOST=http://localhost:11434 python api.py
-```
+# 1. Klonovať repozitáre
+git clone https://github.com/vladko13111999-coder/agenticseek.git
+git clone https://github.com/vladko13111999-coder/Tvojton-.git
 
-### Problém: Telegram bot nefunguje
-```bash
-# Skontrolovať .env
-cat /agenticseek/.env | grep TELEGRAM
+# 2. Otvoriť Lightning.ai Studio
+# https://lightning.ai/vladko13111999/intelligent-agent-platform-project/studios/consistent-fuchsia-cseqj
 
-# Reštart
-pkill -f telegram_bot
-python telegram_bot.py
-```
+# 3. API je už spustené na:
+# https://7777-01km8p7wqj629zs2hpb8sc2bya.cloudspaces.litng.ai
 
-### Problém: Chýba modul
-```bash
-source venv/bin/activate
-pip install <modul>
+# 4. Frontend je na:
+# https://tvojton.online/agent
+
+# 5. Pre zmeny v backend:
+cd agenticseek
+nano simple_api.py
+# Po úprave reštartovať:
+pkill -f simple_api && python simple_api.py &
+
+# 6. Pre zmeny vo frontende:
+cd Tvojton-
+# Uprav súbory a pushni - Vercel automaticky deployne
+git add . && git commit -m "zmena" && git push
 ```
 
 ---
 
-## 11. Credentials (v .env subore)
+## 13. Budúce Vylepšenia
 
-Všetky sensitive údaje sú v `/agenticseek/.env`:
-- RunPod IP a port
-- Vercel token
-- Telegram bot token
-- GitHub token
-
----
-
-## 12. Budúce Vylepšenia
-
-1. **Text-to-Video** - Priamo z textu bez obrázka
-2. **FLUX.2 Klein** - Plná integrácia pre lepšiu kvalitu
-3. **A/B testovanie** - Rôzne prompty
-4. **Užívateľské profily** - Personalizácia
+1. **Generovanie obrázkov** - Stable Diffusion integrácia
+2. **Generovanie videí** - Stable Video Diffusion
+3. **Text-to-Video** - Priamo z textu
+4. **Užívateľské profily** - Personalizácia konverzácií
 5. **Webhooky** - Notifikácie pre status generovania
 
 ---
 
-## 13. Štruktúra Kódu
-
-```
-/agenticseek/
-├── api.py                 # Main FastAPI app
-├── brand_twin_api.py      # Image generation (Stable Diffusion)
-├── video_generator.py     # Video generation (SVD)
-├── web_browser.py         # Web browsing (Playwright)
-├── telegram_bot.py        # Telegram bot
-├── .env                   # Environment variables
-├── sources/
-│   ├── agent_router.py   # Request routing
-│   ├── agents/           # AI agents
-│   │   ├── casual_agent.py
-│   │   ├── planner_agent.py
-│   │   └── ...
-│   └── memory.py         # Conversation memory
-└── venv/                 # Virtual environment
-
-/Tvojton-/client/
-├── src/
-│   ├── pages/
-│   │   └── Agent.tsx     # Main agent page
-│   ├── components/
-│   │   └── AIChatBox.tsx # Chat component
-│   └── lib/
-│       └── agentApi.ts   # API client
-└── package.json
-```
-
----
-
-## 14. Tipy pre Pokračovanie
-
-1. **Pri zmene API** - Uprav `api.py` a reštartuj server
-2. **Pri zmene Frontendu** - Push na GitHub, Vercel automaticky deployne
-3. **Pri zmene Modelov** - Stiahni cez `ollama pull <model>`
-4. **Pri zmene Route** - Uprav `agent_router.py`
-5. **Logy** - `tail -50 /agenticseek/api.log`
-
----
-
-## 15. Rýchly Štart (Ak začíname znova)
-
-```bash
-# 1. Klonovať repo
-git clone https://github.com/vladko13111999-coder/agenticseek.git
-git clone https://github.com/vladko13111999-coder/Tvojton-.git
-
-# 2. SSH na RunPod a stiahnuť zmeny
-cd /agenticseek && git pull origin main
-
-# 3. Spustiť API
-cd /agenticseek && source venv/bin/activate
-OLLAMA_HOST=http://localhost:11434 python api.py
-
-# 4. V novom terminali spustiť Telegram bota
-cd /agenticseek && source venv/bin/activate
-python telegram_bot.py
-
-# 5. Frontend je na Vercel - automaticky aktualizovaný
-```
-
----
-
-## 16. Dôležité URL
-
-- **Frontend**: https://tvojton.online/agent
-- **API Health**: https://ii5nrun0ci2ahz-7777.proxy.runpod.net/health
-- **Telegram Bot**: pozri @BotFather pre username
-
----
-
-*Dokumentácia vytvorená: 21.03.2026*
-*Verzia: 1.0*
+*Dokumentácia aktualizovaná: 21.03.2026*
+*Verzia: 2.0*
