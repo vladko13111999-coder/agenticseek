@@ -54,19 +54,31 @@ class AgentRouter:
         """Detect the language of the input text."""
         text_lower = text.lower()
         
-        # Slovak indicators
-        sk_words = ['ahoj', 'Ďakujem', ' Dakujem', 'som', 'máš', 'mám', 'ako', 'čo', 'kto', 'kde', 'pretože', 'že']
-        # English indicators  
-        en_words = ['hello', 'hi', 'thanks', 'thank', 'how are', 'what', 'where', 'because', 'the', 'is', 'are']
-        # Croatian indicators
-        hr_words = ['bok', 'hvala', 'kako', 'što', 'gdje', 'jer', 'jesi', 'jesam', 'dobro', 'lijepo']
+        # Slovak indicators (slovenčina)
+        sk_words = ['ahoj', 'ďakujem', 'som', 'máš', 'mám', 'ako', 'čo', 'kto', 'kde', 'pretože', 'že', 'prosím', 'dobrý', 'deň', 'večer', 'v pohode', 'spraviť', 'čau', 'nazdar']
+        # Czech indicators (čeština)
+        cs_words = ['ahoj', 'čau', 'co', 'jak', 'jsem', 'máš', 'děkuji', 'díky', 'proč', 'kde', 'kdo', 'protože', 'že', 'prosím', 'dobrý', 'den', 'večer', 'v pohodě', 'udělat', 'nazdar', 'číslo', 'objednávka', 'reklamace', 'článek', 'rybaření', 'přeji', 'přát', 'chci', 'mít', 'být', 'svůj', 'své', 'tohle', 'tady', 'tam', 'tak', 'už', 'ještě', 'potom', 'hned', 'dnes', 'zítra', 'včera']
+        # English indicators
+        en_words = ['hello', 'hi', 'hey', 'thanks', 'thank you', 'how are', 'what', 'where', 'because', 'the', 'is', 'are', 'please', 'okay', 'sure', 'can you', 'could you', 'help me', 'need', 'want', 'have a', 'i need', 'i want']
+        # Croatian indicators (hrvátština)
+        hr_words = ['bok', 'hvala', 'kako', 'što', 'gdje', 'jer', 'jesi', 'jesam', 'dobro', 'lijepo', 'napraviti', 'napravit', 'molim', 'dobar', 'dan', 'večer']
         
         sk_count = sum(1 for w in sk_words if w in text_lower)
+        cs_count = sum(1 for w in cs_words if w in text_lower)
         en_count = sum(1 for w in en_words if w in text_lower)
         hr_count = sum(1 for w in hr_words if w in text_lower)
         
-        if sk_count >= en_count and sk_count >= hr_count:
-            return 'sk'
+        # Find max between SK and CS first (they are very similar)
+        if sk_count >= cs_count:
+            main_slavic = 'sk'
+            main_slavic_count = sk_count
+        else:
+            main_slavic = 'cs'
+            main_slavic_count = cs_count
+        
+        # Compare with other languages
+        if main_slavic_count >= en_count and main_slavic_count >= hr_count:
+            return main_slavic
         elif hr_count >= en_count:
             return 'hr'
         else:

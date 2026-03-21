@@ -354,17 +354,25 @@ def init_interaction():
     print(f"Using provider: {provider_name}, model: {model_name}, server: {server_address}")
     provider = Provider(provider_name, model_name, server_address=server_address)
 
-    # Vytvorenie prehliadača pre browser_agent
-    print("Creating browser driver...")
-    driver = create_driver(headless=True)
-    browser = Browser(driver)
+    # Vytvorenie prehliadača pre browser_agent (ak je dostupný)
+    browser = None
+    try:
+        print("Creating browser driver...")
+        driver = create_driver(headless=True)
+        browser = Browser(driver)
+    except Exception as e:
+        print(f"Warning: Browser driver not available ({str(e)[:50]}). Browser agent will be disabled.")
+    
     agents = {
         "planner": PlannerAgent("planner", "prompts/planner_agent.txt", provider, verbose=False),
         "coder": CoderAgent("coder", "prompts/coder_agent.txt", provider, verbose=False),
         "file": FileAgent("file", "prompts/file_agent.txt", provider, verbose=False),
-        "browser": BrowserAgent("browser", "prompts/browser_agent.txt", provider, verbose=False, browser=browser),
         "casual": CasualAgent("casual", "prompts/casual_agent.txt", provider, verbose=False)
     }
+    
+    # Pridaj browser agent iba ak je browser dostupný
+    if browser:
+        agents["browser"] = BrowserAgent("browser", "prompts/browser_agent.txt", provider, verbose=False, browser=browser)
     print("Agents types:")
     for key, value in agents.items():
         print(f"  {key}: {type(value)}")

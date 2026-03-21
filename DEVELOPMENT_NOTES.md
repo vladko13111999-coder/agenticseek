@@ -1,6 +1,38 @@
 # Development Notes
 
-## 📌 Projekt Status - Thu Mar 19 2026
+## 📌 Projekt Status - Sat Mar 21 2026
+
+---
+
+## 🆕 BRAND TWIN UPDATE (2026-03-21)
+
+### Brand Twin - Autonómny obchodný asistent
+- **Účel:** E-shopy a malé firmy - komunikácia, SEO, reklamácie, generovanie obsahu
+- **Jazyky:** SK, CZ, HR, EN
+- **Model:** gemma3:12b (dokým nebude GaMS3)
+- **Identita:** Reprezentuje tvojton.online
+
+### Čo bolo zmenené:
+
+#### 1. `prompts/base/casual_agent.txt` - Brand Twin osobnosť
+- Pridaná oficiálna Brand Twin identita
+- Pridaný suchý humor (anglický štýl)
+- Pridané CZ príklady a pravidlá
+- Pridané príklady humoru pre vážne situácie
+
+#### 2. `sources/agent_router.py` - Vylepšená detekcia jazykov
+- Rozšírená detekcia SK (slovenčina) - 14 slov
+- Rozšírená detekcia CS (čeština) - 16 slov
+- Rozšírená detekcia HR (chorvátčina) - 13 slov
+- Rozšírená detekcia EN (angličtina) - 14 slov
+- Zlepšený algoritmus rozpoznávania podobných jazykov (SK vs CS)
+
+#### 3. `config.ini`
+- Pridaný `cz` do zoznamu jazykov
+
+---
+
+## ✅ FUNKČNÉ VECI (Working Features)
 
 ---
 
@@ -99,6 +131,5 @@ python api.py
 
 ---
 
-**Posledná aktualizácia:** 2026-03-19 12:00 UTC  
-**Commit:** 597125d  
+**Posledná aktualizácia:** 2026-03-21 14:00 UTC  
 **Branch:** main
