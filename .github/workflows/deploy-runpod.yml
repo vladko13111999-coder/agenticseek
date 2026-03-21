@@ -1,0 +1,127 @@
+name: RunPod Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: 'Action to perform'
+        required: true
+        default: 'deploy'
+        type: choice
+        options:
+          - deploy
+          - restart_api
+          - check_status
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH for RunPod
+        uses: webfactory/ssh-agent@v0.9.0
+        with:
+          ssh-private-key: ${{ secrets.RUNPOD_SSH_KEY }}
+
+      - name: Add RunPod host to known hosts
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.RUNPOD_HOST_KEY }}" > ~/.ssh/known_hosts
+
+      - name: Deploy to RunPod
+        if: inputs.action == 'deploy'
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.RUNPOD_USER }}@${{ secrets.RUNPOD_HOST }} << 'EOF'
+          set -e
+          
+          echo "=== RunPod Deploy Script ==="
+          echo "Date: $(date)"
+          
+          # 1. Install Ollama
+          echo "Installing Ollama..."
+          curl -fsSL https://ollama.com/install.sh | sh
+          
+          # 2. Pull models
+          echo "Pulling models..."
+          ollama pull gemma3:12b
+          ollama pull qwen2.5:14b
+          
+          # 3. Install Chromium
+          echo "Installing Chromium..."
+          apt-get update && apt-get install -y chromium-browser chromium-chromedriver
+          
+          # 4. Start Ollama daemon
+          echo "Starting Ollama..."
+          pkill ollama || true
+          ollama serve &
+          sleep 5
+          
+          # 5. Setup project
+          echo "Setting up agenticseek..."
+          cd ~/agenticseek || git clone https://github.com/vladko13111999-coder/agenticseek.git
+          cd ~/agenticseek
+          git pull origin main
+          pip3 install -r requirements.txt
+          
+          # 6. Start API
+          echo "Starting API on port 7777..."
+          pkill -f "python.*api.py" || true
+          nohup python3 api.py > api.log 2>&1 &
+          sleep 10
+          
+          # 7. Verify
+          echo "Verifying API..."
+          curl -s http://localhost:7777/health || echo "API may still be starting..."
+          
+          echo "=== Deploy Complete ==="
+          EOF
+
+      - name: Restart API
+        if: inputs.action == 'restart_api'
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.RUNPOD_USER }}@${{ secrets.RUNPOD_HOST }} << 'EOF'
+          set -e
+          
+          echo "=== Restarting API ==="
+          
+          # Restart Ollama
+          pkill ollama || true
+          sleep 2
+          ollama serve &
+          sleep 5
+          
+          # Restart API
+          cd ~/agenticseek
+          pkill -f "python.*api.py" || true
+          sleep 2
+          nohup python3 api.py > api.log 2>&1 &
+          sleep 10
+          
+          # Verify
+          curl -s http://localhost:7777/health
+          
+          echo "=== API Restart Complete ==="
+          EOF
+
+      - name: Check Status
+        if: inputs.action == 'check_status'
+        run: |
+          ssh -o StrictHostKeyChecking=no ${{ secrets.RUNPOD_USER }}@${{ secrets.RUNPOD_HOST }} << 'EOF'
+          echo "=== RunPod Status Check ==="
+          
+          echo "--- Ollama ---"
+          ollama list
+          
+          echo "--- API Health ---"
+          curl -s http://localhost:7777/health || echo "API not responding"
+          
+          echo "--- Running Processes ---"
+          ps aux | grep -E "(ollama|api.py)" | grep -v grep
+          
+          echo "--- API Log (last 20 lines) ---"
+          tail -20 ~/agenticseek/api.log 2>/dev/null || echo "No log file"
+          
+          echo "=== Status Check Complete ==="
+          EOF
