@@ -1,14 +1,17 @@
 import os
 import io
 import re
+import json
 import base64
 import time
+import asyncio
 import tempfile
 import numpy as np
 from datetime import datetime
-from fastapi import FastAPI, BackgroundTasks
+from typing import AsyncGenerator
+from fastapi import FastAPI, BackgroundTasks, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel
 import uvicorn
 import httpx
@@ -481,6 +484,78 @@ async def query(request: QueryRequest):
             "uid": "test-123",
             "thoughts": thoughts.get_all(),
         }
+
+
+async def generate_streaming_response(query: str, lang: str) -> AsyncGenerator[str, None]:
+    """Generate streaming response for chat queries"""
+    thoughts = ThoughtLogger()
+    thoughts.add("Rozpoznávam jazyk", details=f"Zistený jazyk: {lang}")
+    
+    system_prompts = {
+        'sk': "SLOVAK ONLY. You MUST respond only in Slovak language. Never use Czech words. Response: Áno, viem po slovensky.",
+        'cs': "CESKY ONLY. Odpovídej JEN česky.",
+        'hr': "HRVATSKI ONLY. Odgovaraj SAMO hrvatski.",
+        'en': "ENGLISH ONLY. Respond in English only."
+    }
+    
+    system_msg = system_prompts.get(lang, system_prompts['sk'])
+    thoughts.add("Používam Twin Pro na odpoveď", model="gemma3:12b")
+    
+    # Send initial thoughts
+    yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+    
+    full_answer = ""
+    
+    try:
+        async with httpx.AsyncClient(timeout=120.0) as client:
+            async with client.stream(
+                "POST",
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": "gemma3:12b",
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": query}
+                    ],
+                    "stream": True,
+                    "options": {
+                        "temperature": 0.7,
+                        "num_predict": 500,
+                    }
+                },
+            ) as response:
+                async for line in response.aiter_lines():
+                    if line:
+                        try:
+                            data = json.loads(line)
+                            content = data.get("message", {}).get("content", "")
+                            if content:
+                                full_answer += content
+                                yield f"data: {json.dumps({'type': 'chunk', 'data': content})}\n\n"
+                            
+                            if data.get("done"):
+                                thoughts.add("Odpoveď prijatá od Twin Pro", model="gemma3:12b", details=f"Na {len(full_answer)} znakov")
+                                yield f"data: {json.dumps({'type': 'done', 'thoughts': thoughts.get_all(), 'full_answer': full_answer.strip()})}\n\n"
+                        except json.JSONDecodeError:
+                            continue
+    except Exception as e:
+        yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
+
+
+@app.post("/stream-query")
+async def stream_query(request: QueryRequest):
+    """Streaming endpoint for chat queries"""
+    lang = detect_language(request.query)
+    
+    return StreamingResponse(
+        generate_streaming_response(request.query, lang),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        }
+    )
 
 
 @app.post("/generate-image")
