@@ -11,11 +11,11 @@ app = FastAPI(title="Brand Twin API")
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
-        "https://lightning.ai",
         "https://tvojton.online",
-        "https://invision-mistakes-influence-verbal.trycloudflare.com",
+        "https://www.tvojton.online",
         "http://localhost:3000",
         "http://localhost:5173",
+        "https://invision-mistakes-influence-verbal.trycloudflare.com",
     ],
     allow_credentials=True,
     allow_methods=["*"],

@@ -586,47 +586,6 @@ async def process_query(request: QueryRequest):
     # Handle image generation
     if agent_type == "image":
         img_result = generate_image(refined_query)
-<<<<<<< Updated upstream
-        return JSONResponse(status_code=200, content={
-            "done": "true",
-            "answer": img_result.get("message", "") + "\n\n" + img_result.get("prompt", ""),
-            "reasoning": "",
-            "agent_name": "GLM-Image",
-            "success": str(img_result.get("success", True)),
-            
-            "image_base64": img_result.get("image_base64", "") if img_result else "",
-            "status": "Ready",
-            "uid": str(uuid.uuid4())
-        })
-    
-    # Handle video generation
-    if agent_type == "video":
-        video_result = generate_video(refined_query)
-        return JSONResponse(status_code=200, content={
-            "done": "true",
-            "answer": video_result.get("message", "") + "\n\nPrompt: " + video_result.get("prompt", refined_query),
-            "reasoning": "",
-            "agent_name": "Video-SVD",
-            "success": str(video_result.get("success", False)),
-            
-            "status": "Ready",
-            "uid": str(uuid.uuid4())
-        })
-    
-    # Handle planner (placeholder)
-    if agent_type == "planner":
-        return JSONResponse(status_code=200, content={
-            "done": "true",
-            "answer": f"Planner request: {refined_query}\n\nPlanner agent will process this multi-step task.",
-            "reasoning": "",
-            "agent_name": "Planner",
-            "success": "true",
-            
-            "status": "Ready",
-            "uid": str(uuid.uuid4())
-        })
-    
-=======
         return JSONResponse(
             status_code=200,
             content={
@@ -638,7 +597,7 @@ async def process_query(request: QueryRequest):
                 "agent_name": "GLM-Image",
                 "success": str(img_result.get("success", True)),
                 "blocks": {},
-                "video_base64": video_result.get("video_base64", ""),
+                "video_base64": "",
                 "image_base64": img_result.get("image_base64", "")
                 if img_result
                 else "",
@@ -678,13 +637,11 @@ async def process_query(request: QueryRequest):
                 "agent_name": "Planner",
                 "success": "true",
                 "blocks": {},
-                "video_base64": video_result.get("video_base64", ""),
+                "video_base64": "",
                 "status": "Ready",
                 "uid": str(uuid.uuid4()),
             },
         )
-
->>>>>>> Stashed changes
     # Continue with normal casual chat
     if is_generating:
         logger.warning("Another query is being processed, please wait.")
