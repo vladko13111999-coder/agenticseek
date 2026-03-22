@@ -311,7 +311,7 @@ async def health():
         vram = torch.cuda.memory_allocated() / 1e9
     return {
         "status": "healthy",
-        "version": "1.4.0",
+        "version": "1.5.0",
         "provider": "ollama",
         "sdxl_loaded": sdxl_pipe is not None,
         "vram_gb": round(vram, 2),
@@ -328,82 +328,27 @@ async def query(request: QueryRequest):
         
         # Check if this is a video request
         if is_video_request(request.query):
-            video_prompt = extract_prompt(request.query)
             thoughts.add("Rozpoznávam požiadavku", details="Požiadavka na generovanie videa")
             
-            # Enhance prompt with motion descriptors
-            thoughts.add("Vylepšujem prompt", model="gemma3:12b")
-            enhanced_prompt = await enhance_prompt_with_llm(video_prompt, lang)
-            thoughts.add("Prompt vylepšený", details=enhanced_prompt[:50] + "..." if len(enhanced_prompt) > 50 else enhanced_prompt)
+            # Video generation is temporarily disabled - not enough VRAM
+            messages = {
+                'sk': 'Video generovanie je momentálne nedostupné. 🚀 Pracujeme na vylepšení GPU infraštruktúry. Skús namiesto toho obrázok!',
+                'cs': 'Generování videa je momentálně nedostupné. 🚀 Pracujeme na vylepšení GPU infrastruktury. Zkus místo toho obrázek!',
+                'hr': 'Generiranje videa trenutno nije dostupno. 🚀 Radimo na poboljšanju GPU infrastrukture. Probaj umjesto toga sliku!',
+                'en': 'Video generation is currently unavailable. 🚀 We are working on improving GPU infrastructure. Try an image instead!',
+            }
             
-            try:
-                # First generate an image, then create video from it
-                sdxl = load_sdxl()
-                thoughts.add("Generujem náhľadový obrázok", model="sdxl-turbo")
-                print(f"Generating image for video: {enhanced_prompt}")
-                
-                # Generate source image
-                source_image = sdxl(
-                    prompt=enhanced_prompt + ", photorealistic, high quality",
-                    num_inference_steps=8,
-                    guidance_scale=1.0,
-                    height=512,
-                    width=512
-                ).images[0]
-                thoughts.add("Náhľadový obrázok vygenerovaný", model="sdxl-turbo")
-                
-                # Unload SDXL to free VRAM for SVD
-                del sdxl
-                torch.cuda.empty_cache()
-                
-                # Now generate video from image using SVD
-                video_pipe_model = load_video()
-                thoughts.add("Vytváram video z obrázka", model="stable-video-diffusion")
-                print(f"Generating video from image...")
-                
-                video_frames = video_pipe_model(
-                    image=source_image,
-                    num_frames=25,
-                    decode_chunk_size=4,
-                    num_inference_steps=25,
-                    generator=torch.Generator(device='cuda').manual_seed(42),
-                ).frames[0]
-                thoughts.add("Video vygenerované cez Twin Studio", model="stable-video-diffusion", details="25 snímkov")
-                
-                # Convert to MP4
-                mp4_base64 = frames_to_mp4(video_frames, fps=8)
-                
-                messages = {
-                    'sk': 'Video bolo vygenerované!',
-                    'cs': 'Video bylo vygenerováno!',
-                    'hr': 'Video je izrađeno!',
-                    'en': 'Video generated!',
-                }
-                
-                return {
-                    "done": "true",
-                    "answer": messages.get(lang, messages['sk']),
-                    "video_base64": mp4_base64,
-                    "prompt": enhanced_prompt,
-                    "agent_name": "TvojTon",
-                    "success": "true",
-                    "language": lang,
-                    "blocks": {"video": mp4_base64},
-                    "status": "Ready",
-                    "uid": "test-123",
-                    "thoughts": thoughts.get_all(),
-                }
-            except Exception as e:
-                return {
-                    "done": "true",
-                    "answer": f"Nastala chyba pri generovaní videa: {str(e)}",
-                    "agent_name": "TvojTon",
-                    "success": "false",
-                    "blocks": {},
-                    "status": "Error",
-                    "uid": "test-123",
-                    "thoughts": thoughts.get_all(),
-                }
+            return {
+                "done": "true",
+                "answer": messages.get(lang, messages['sk']),
+                "agent_name": "TvojTon",
+                "success": "false",
+                "language": lang,
+                "blocks": {},
+                "status": "Coming Soon",
+                "uid": "test-123",
+                "thoughts": thoughts.get_all(),
+            }
         
         # Check if this is an image request
         if is_image_request(request.query):
