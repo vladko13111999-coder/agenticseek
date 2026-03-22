@@ -137,6 +137,7 @@ def frames_to_mp4(frames, fps=8):
 
 class QueryRequest(BaseModel):
     query: str
+    history: list = []
 
 
 class ImageRequest(BaseModel):
@@ -486,7 +487,7 @@ async def query(request: QueryRequest):
         }
 
 
-async def generate_streaming_response(query: str, lang: str) -> AsyncGenerator[str, None]:
+async def generate_streaming_response(query: str, lang: str, history: list = None) -> AsyncGenerator[str, None]:
     """Generate streaming response for chat queries"""
     thoughts = ThoughtLogger()
     thoughts.add("Rozpoznávam jazyk", details=f"Zistený jazyk: {lang}")
@@ -504,6 +505,18 @@ async def generate_streaming_response(query: str, lang: str) -> AsyncGenerator[s
     # Send initial thoughts
     yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
     
+    # Build messages with history
+    messages = [{"role": "system", "content": system_msg}]
+    
+    # Add history (last 10 messages max)
+    if history:
+        for h in history[-10:]:
+            if h.get("content"):
+                messages.append({"role": h["role"], "content": h["content"]})
+    
+    # Add current query
+    messages.append({"role": "user", "content": query})
+    
     full_answer = ""
     
     try:
@@ -513,10 +526,7 @@ async def generate_streaming_response(query: str, lang: str) -> AsyncGenerator[s
                 f"{OLLAMA_URL}/api/chat",
                 json={
                     "model": "gemma3:12b",
-                    "messages": [
-                        {"role": "system", "content": system_msg},
-                        {"role": "user", "content": query}
-                    ],
+                    "messages": messages,
                     "stream": True,
                     "options": {
                         "temperature": 0.7,
@@ -548,7 +558,7 @@ async def stream_query(request: QueryRequest):
     lang = detect_language(request.query)
     
     return StreamingResponse(
-        generate_streaming_response(request.query, lang),
+        generate_streaming_response(request.query, lang, request.history),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
