@@ -138,6 +138,7 @@ def frames_to_mp4(frames, fps=8):
 class QueryRequest(BaseModel):
     query: str
     history: list = []
+    model: str | None = None
 
 
 class ImageRequest(BaseModel):
@@ -487,22 +488,113 @@ async def query(request: QueryRequest):
         }
 
 
-async def generate_streaming_response(query: str, lang: str, history: list = None) -> AsyncGenerator[str, None]:
+def is_image_request(text: str) -> bool:
+    """Check if user wants image generation"""
+    text_lower = text.lower()
+    image_keywords = [
+        'vygeneruj obrázok', 'generuj obrázok', 'sprav obrázok', 'vytvor obrázok',
+        'generate image', 'create image', 'make image', 'draw',
+        'nakresli', 'vykresli', 'obrázok', 'image'
+    ]
+    for kw in image_keywords:
+        if kw in text_lower:
+            return True
+    return False
+
+def extract_url(text: str) -> str | None:
+    """Extract URL from text"""
+    import re
+    url_pattern = r'https?://[^\s]+'
+    match = re.search(url_pattern, text)
+    if match:
+        return match.group(0)
+    return None
+
+async def fetch_url_content(url: str) -> str:
+    """Fetch content from URL"""
+    try:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            return response.text[:10000]
+    except Exception as e:
+        return f"Error fetching URL: {str(e)}"
+
+async def generate_streaming_response(query: str, lang: str, history: list = None, model: str | None = None) -> AsyncGenerator[str, None]:
     """Generate streaming response for chat queries"""
     thoughts = ThoughtLogger()
     thoughts.add("Rozpoznávam jazyk", details=f"Zistený jazyk: {lang}")
     
+    # Determine model
+    model_id = model if model else "gemma3:12b"
+    model_brand = get_brand_name(model_id)
+    
+    # Check for image request
+    if is_image_request(query):
+        thoughts.add("Detegujem požiadavku na obrázok", model=model_id)
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        thoughts.add("Načítavam Image Studio (SDXL Turbo)", model="sdxl-turbo")
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        try:
+            pipe = load_sdxl()
+            thoughts.add("Generujem obrázok...", model="sdxl-turbo")
+            yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+            
+            image = pipe(
+                prompt=query,
+                num_inference_steps=8,
+                guidance_scale=1.0,
+                height=1024,
+                width=1024
+            ).images[0]
+            
+            buffer = io.BytesIO()
+            image.save(buffer, format="PNG")
+            img_base64 = base64.b64encode(buffer.getvalue()).decode()
+            
+            thoughts.add("Obrázok vygenerovaný!", model="sdxl-turbo", details="1024x1024 PNG")
+            
+            yield f"data: {json.dumps({'type': 'image', 'image_base64': img_base64})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'thoughts': thoughts.get_all(), 'full_answer': 'Obrázok bol vygenerovaný!'})}\n\n"
+            return
+            
+        except Exception as e:
+            thoughts.add("Chyba pri generovaní obrázka", model="sdxl-turbo", details=str(e))
+            yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
+            return
+    
+    # Check for URL in query
+    url = extract_url(query)
+    if url:
+        thoughts.add(f"Hľadám URL v texte", details=url)
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        thoughts.add(f"Navštevujem webstránku...", model=model_id, details=url)
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        url_content = await fetch_url_content(url)
+        thoughts.add(f"Získavam obsah z {url[:50]}...", model=model_id)
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        # Add URL context to query
+        query = f"Používateľ sa pýta: {query}\n\nStiahnutý obsah z URL: {url_content[:5000]}\n\nAnalizuj túto webstránku a odpovedz na otázku používateľa."
+    
+    thoughts.add(f"Používam {model_brand}", model=model_id)
+    
+    # Send initial thoughts
+    yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+    
     system_prompts = {
-        'sk': "SLOVAK ONLY. You MUST respond only in Slovak language. Never use Czech words. Response: Áno, viem po slovensky.",
+        'sk': "SLOVAK ONLY. You MUST respond only in Slovak language. Never use Czech words.",
         'cs': "CESKY ONLY. Odpovídej JEN česky.",
         'hr': "HRVATSKI ONLY. Odgovaraj SAMO hrvatski.",
         'en': "ENGLISH ONLY. Respond in English only."
     }
     
     system_msg = system_prompts.get(lang, system_prompts['sk'])
-    thoughts.add("Používam Twin Pro na odpoveď", model="gemma3:12b")
-    
-    # Send initial thoughts
+    thoughts.add("Pripravujem odpoveď", model=model_id)
     yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
     
     # Build messages with history
@@ -525,7 +617,7 @@ async def generate_streaming_response(query: str, lang: str, history: list = Non
                 "POST",
                 f"{OLLAMA_URL}/api/chat",
                 json={
-                    "model": "gemma3:12b",
+                    "model": model_id,
                     "messages": messages,
                     "stream": True,
                     "options": {
@@ -544,7 +636,7 @@ async def generate_streaming_response(query: str, lang: str, history: list = Non
                                 yield f"data: {json.dumps({'type': 'chunk', 'data': content})}\n\n"
                             
                             if data.get("done"):
-                                thoughts.add("Odpoveď prijatá od Twin Pro", model="gemma3:12b", details=f"Na {len(full_answer)} znakov")
+                                thoughts.add("Odpoveď dokončená", model=model_id, details=f"{len(full_answer)} znakov")
                                 yield f"data: {json.dumps({'type': 'done', 'thoughts': thoughts.get_all(), 'full_answer': full_answer.strip()})}\n\n"
                         except json.JSONDecodeError:
                             continue
@@ -558,7 +650,7 @@ async def stream_query(request: QueryRequest):
     lang = detect_language(request.query)
     
     return StreamingResponse(
-        generate_streaming_response(request.query, lang, request.history),
+        generate_streaming_response(request.query, lang, request.history, request.model),
         media_type="text/event-stream",
         headers={
             "Cache-Control": "no-cache",
