@@ -441,7 +441,7 @@ async def query(request: QueryRequest):
                     "stream": False,
                     "options": {
                         "temperature": 0.7,
-                        "num_predict": 500,
+                        "num_predict": 1500,
                     }
                 },
             )
@@ -530,7 +530,7 @@ async def generate_streaming_response(query: str, lang: str, history: list = Non
                     "stream": True,
                     "options": {
                         "temperature": 0.7,
-                        "num_predict": 500,
+                        "num_predict": 1500,
                     }
                 },
             ) as response:
