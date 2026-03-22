@@ -3,6 +3,7 @@ import io
 import re
 import base64
 import time
+import tempfile
 import numpy as np
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,8 +13,8 @@ import uvicorn
 import httpx
 import torch
 from PIL import Image
-from diffusers import StableDiffusionXLPipeline, DiffusionPipeline
-import imageio
+from diffusers import StableDiffusionXLPipeline, StableVideoDiffusionPipeline
+import cv2
 
 app = FastAPI(title="Brand Twin API")
 
@@ -50,14 +51,39 @@ def load_sdxl():
 def load_video():
     global video_pipe
     if video_pipe is None:
-        print("Loading Zeroscope video model...")
-        video_pipe = DiffusionPipeline.from_pretrained(
-            "cerspense/zeroscope_v2_576w",
+        print("Loading SVD video model...")
+        video_pipe = StableVideoDiffusionPipeline.from_pretrained(
+            "stabilityai/stable-video-diffusion-img2vid-xt",
             torch_dtype=torch.float16,
         )
         video_pipe = video_pipe.to("cuda")
-        print("Video model loaded!")
+        print("SVD video model loaded!")
     return video_pipe
+
+def pil_to_np(frame):
+    """Convert PIL Image to numpy array"""
+    return np.array(frame.convert('RGB'))
+
+def frames_to_mp4(frames, fps=8):
+    """Convert frames to MP4 video and return base64"""
+    frames_rgb = [pil_to_np(f) for f in frames]
+    
+    with tempfile.NamedTemporaryFile(suffix='.mp4', delete=False) as f:
+        temp_path = f.name
+    
+    h, w = frames_rgb[0].shape[:2]
+    fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+    out = cv2.VideoWriter(temp_path, fourcc, fps, (w, h))
+    
+    for frame in frames_rgb:
+        out.write(cv2.cvtColor(frame, cv2.COLOR_RGB2BGR))
+    out.release()
+    
+    with open(temp_path, 'rb') as f:
+        mp4_data = f.read()
+    
+    os.remove(temp_path)
+    return base64.b64encode(mp4_data).decode()
 
 class QueryRequest(BaseModel):
     query: str
@@ -238,7 +264,7 @@ async def health():
         vram = torch.cuda.memory_allocated() / 1e9
     return {
         "status": "healthy",
-        "version": "1.2.0",
+        "version": "1.3.0",
         "provider": "ollama",
         "sdxl_loaded": sdxl_pipe is not None,
         "vram_gb": round(vram, 2),
@@ -258,24 +284,37 @@ async def query(request: QueryRequest):
             enhanced_prompt = await enhance_prompt_with_llm(video_prompt, lang)
             
             try:
-                pipe = load_video()
-                print(f"Generating video: {enhanced_prompt}")
+                # First generate an image, then create video from it
+                sdxl = load_sdxl()
+                print(f"Generating image for video: {enhanced_prompt}")
                 
-                # Higher resolution and more steps for better quality
-                video_frames = pipe(
-                    prompt=enhanced_prompt,
-                    num_inference_steps=25,  # More steps for better quality
-                    height=320,  # Higher resolution
-                    width=576,
+                # Generate source image
+                source_image = sdxl(
+                    prompt=enhanced_prompt + ", photorealistic, high quality",
+                    num_inference_steps=8,
+                    guidance_scale=1.0,
+                    height=512,
+                    width=512
+                ).images[0]
+                
+                # Unload SDXL to free VRAM for SVD
+                del sdxl
+                torch.cuda.empty_cache()
+                
+                # Now generate video from image using SVD
+                video_pipe = load_video()
+                print(f"Generating video from image...")
+                
+                video_frames = video_pipe(
+                    image=source_image,
+                    num_frames=25,
+                    decode_chunk_size=4,
+                    num_inference_steps=25,
+                    generator=torch.Generator(device='cuda').manual_seed(42),
                 ).frames[0]
                 
-                # Convert frames to uint8
-                frames_uint8 = [(frame * 255).astype(np.uint8) for frame in video_frames]
-                
-                # Save as GIF with higher quality
-                gif_buffer = io.BytesIO()
-                imageio.mimsave(gif_buffer, frames_uint8, format='GIF', fps=12)  # Faster fps
-                gif_base64 = base64.b64encode(gif_buffer.getvalue()).decode()
+                # Convert to MP4
+                mp4_base64 = frames_to_mp4(video_frames, fps=8)
                 
                 messages = {
                     'sk': 'Video bolo vygenerované!',
@@ -287,12 +326,12 @@ async def query(request: QueryRequest):
                 return {
                     "done": "true",
                     "answer": messages.get(lang, messages['sk']),
-                    "video_base64": gif_base64,
+                    "video_base64": mp4_base64,
                     "prompt": enhanced_prompt,
                     "agent_name": "TvojTon",
                     "success": "true",
                     "language": lang,
-                    "blocks": {"video": gif_base64},
+                    "blocks": {"video": mp4_base64},
                     "status": "Ready",
                     "uid": "test-123",
                 }
@@ -466,30 +505,39 @@ async def generate_image(request: ImageRequest):
 async def generate_video(request: VideoRequest):
     """Direct endpoint for video generation"""
     try:
-        pipe = load_video()
-        print(f"Generating video: {request.prompt}")
+        # First generate image, then video from it
+        sdxl = load_sdxl()
+        print(f"Generating source image: {request.prompt}")
         
-        # Higher quality settings
-        video_frames = pipe(
-            prompt=request.prompt,
+        source_image = sdxl(
+            prompt=request.prompt + ", photorealistic, high quality",
+            num_inference_steps=8,
+            guidance_scale=1.0,
+            height=512,
+            width=512
+        ).images[0]
+        
+        del sdxl
+        torch.cuda.empty_cache()
+        
+        video_pipe = load_video()
+        print(f"Generating video from image...")
+        
+        video_frames = video_pipe(
+            image=source_image,
+            num_frames=25,
+            decode_chunk_size=4,
             num_inference_steps=25,
-            height=320,
-            width=576,
+            generator=torch.Generator(device='cuda').manual_seed(42),
         ).frames[0]
         
-        # Convert frames to uint8
-        frames_uint8 = [(frame * 255).astype(np.uint8) for frame in video_frames]
-        
-        # Save as GIF
-        gif_buffer = io.BytesIO()
-        imageio.mimsave(gif_buffer, frames_uint8, format='GIF', fps=8)
-        gif_base64 = base64.b64encode(gif_buffer.getvalue()).decode()
+        mp4_base64 = frames_to_mp4(video_frames, fps=8)
         
         return {
             "success": True,
-            "video_base64": gif_base64,
+            "video_base64": mp4_base64,
             "prompt": request.prompt,
-            "model": "Zeroscope v2",
+            "model": "SVD (Stable Video Diffusion)",
             "frames": len(video_frames)
         }
     except Exception as e:
