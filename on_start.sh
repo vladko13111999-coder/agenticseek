@@ -12,33 +12,44 @@ echo "=========================================="
 # Change to agenticseek directory
 cd ~/agenticseek
 
-# 1. Install/Update system dependencies if needed
-echo "[1/5] Checking system dependencies..."
+# 1. Install Chromium and chromedriver
+echo "[1/6] Installing Chromium and chromedriver..."
 if ! command -v chromium-browser &> /dev/null; then
-    echo "Installing chromium-browser..."
     apt-get update && apt-get install -y chromium-browser chromium-chromedriver
+else
+    echo "  Chromium already installed"
 fi
 
-# 2. Start Ollama daemon
-echo "[2/5] Starting Ollama daemon..."
+# 2. Download Image Turbo model (if not exists)
+echo "[2/6] Checking Image model..."
+if ! ollama list | grep -q "image-turbo"; then
+    echo "  Pulling stable-diffusion as fallback image model..."
+    ollama pull stable-diffusion
+    ollama cp stable-diffusion image-turbo || echo "  Could not rename, using stable-diffusion"
+else
+    echo "  Image model already installed"
+fi
+
+# 3. Start Ollama daemon
+echo "[3/6] Starting Ollama daemon..."
 export OLLAMA_HOST=0.0.0.0:11434
 pkill -f "ollama serve" || true
 ollama serve &
-sleep 3
+sleep 5
 
-# 3. Verify Ollama is running
-echo "[3/5] Verifying Ollama..."
+# 4. Verify Ollama and models
+echo "[4/6] Verifying Ollama and models..."
 ollama list
 
-# 4. Install Python dependencies
-echo "[4/5] Installing Python dependencies..."
-pip3 install -r requirements.txt --quiet
+# 5. Install Python dependencies
+echo "[5/6] Installing Python dependencies..."
+pip3 install -r requirements.txt --quiet 2>/dev/null || pip3 install -r requirements.txt
 
-# 5. Start API server
-echo "[5/5] Starting Brand Twin API..."
+# 6. Start API server
+echo "[6/6] Starting Brand Twin API..."
 pkill -f "python.*api.py" || true
 nohup python3 api.py > api.log 2>&1 &
-sleep 3
+sleep 5
 
 # Verify API is running
 echo ""
