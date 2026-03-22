@@ -98,6 +98,15 @@ def load_sdxl():
         print("SDXL Turbo loaded!")
     return sdxl_pipe
 
+def unload_sdxl():
+    global sdxl_pipe
+    if sdxl_pipe is not None:
+        print("Unloading SDXL Turbo model...")
+        del sdxl_pipe
+        sdxl_pipe = None
+        torch.cuda.empty_cache()
+        print("SDXL Turbo unloaded!")
+
 def load_video():
     global video_pipe
     if video_pipe is None:
@@ -555,9 +564,10 @@ async def generate_streaming_response(query: str, lang: str, history: list = Non
             img_base64 = base64.b64encode(buffer.getvalue()).decode()
             
             thoughts.add("Obrázok vygenerovaný!", model="sdxl-turbo", details="1024x1024 PNG")
-            
             yield f"data: {json.dumps({'type': 'image', 'image_base64': img_base64})}\n\n"
             yield f"data: {json.dumps({'type': 'done', 'thoughts': thoughts.get_all(), 'full_answer': 'Obrázok bol vygenerovaný!'})}\n\n"
+            
+            unload_sdxl()
             return
             
         except Exception as e:
