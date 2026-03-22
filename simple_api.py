@@ -181,6 +181,56 @@ def extract_prompt(text: str) -> str:
     return result if result else text
 
 
+def enhance_image_prompt(prompt: str) -> str:
+    """Enhance image prompt with quality tags and style"""
+    enhancements = [
+        "photorealistic, high detail, 4K quality",
+        "professional photography, sharp focus",
+        "natural lighting, studio quality"
+    ]
+    return f"{prompt}, {enhancements[0]}, {enhancements[1]}, {enhancements[2]}"
+
+
+def enhance_video_prompt(prompt: str) -> str:
+    """Enhance video prompt with motion descriptors"""
+    motion_words = ["moving", "dynamic scene", "continuous motion", "live action"]
+    return f"{prompt}, {motion_words[0]}, {motion_words[1]}, smooth {motion_words[2]}"
+
+
+async def enhance_prompt_with_llm(prompt: str, lang: str) -> str:
+    """Use LLM to enhance prompts for better generation results"""
+    try:
+        system_msg = """You are an image/video prompt enhancer. Take the user's description and create a detailed, vivid prompt for AI image/video generation.
+Rules:
+- Keep the main subject and action clear
+- Add descriptive details (colors, lighting, mood, style)
+- For images: add "photorealistic, high detail, sharp focus"
+- For videos: add motion words like "moving", "animated", "dynamic scene"
+- Keep it under 200 characters
+Respond ONLY with the enhanced prompt in English."""
+        
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": "gemma3:12b",
+                    "messages": [
+                        {"role": "system", "content": system_msg},
+                        {"role": "user", "content": prompt}
+                    ],
+                    "stream": False,
+                    "options": {"temperature": 0.7, "num_predict": 100}
+                },
+            )
+            result = response.json()
+            enhanced = result.get("message", {}).get("content", "").strip()
+            if enhanced:
+                return enhanced
+    except Exception:
+        pass
+    return prompt
+
+
 @app.get("/health")
 async def health():
     vram = 0
@@ -188,7 +238,7 @@ async def health():
         vram = torch.cuda.memory_allocated() / 1e9
     return {
         "status": "healthy",
-        "version": "1.1.0",
+        "version": "1.2.0",
         "provider": "ollama",
         "sdxl_loaded": sdxl_pipe is not None,
         "vram_gb": round(vram, 2),
@@ -204,23 +254,27 @@ async def query(request: QueryRequest):
         if is_video_request(request.query):
             video_prompt = extract_prompt(request.query)
             
+            # Enhance prompt with motion descriptors
+            enhanced_prompt = await enhance_prompt_with_llm(video_prompt, lang)
+            
             try:
                 pipe = load_video()
-                print(f"Generating video: {video_prompt}")
+                print(f"Generating video: {enhanced_prompt}")
                 
+                # Higher resolution and more steps for better quality
                 video_frames = pipe(
-                    prompt=video_prompt,
-                    num_inference_steps=10,
-                    height=256,
-                    width=256,
+                    prompt=enhanced_prompt,
+                    num_inference_steps=25,  # More steps for better quality
+                    height=320,  # Higher resolution
+                    width=576,
                 ).frames[0]
                 
                 # Convert frames to uint8
                 frames_uint8 = [(frame * 255).astype(np.uint8) for frame in video_frames]
                 
-                # Save as GIF
+                # Save as GIF with higher quality
                 gif_buffer = io.BytesIO()
-                imageio.mimsave(gif_buffer, frames_uint8, format='GIF', fps=8)
+                imageio.mimsave(gif_buffer, frames_uint8, format='GIF', fps=12)  # Faster fps
                 gif_base64 = base64.b64encode(gif_buffer.getvalue()).decode()
                 
                 messages = {
@@ -234,7 +288,7 @@ async def query(request: QueryRequest):
                     "done": "true",
                     "answer": messages.get(lang, messages['sk']),
                     "video_base64": gif_base64,
-                    "prompt": video_prompt,
+                    "prompt": enhanced_prompt,
                     "agent_name": "TvojTon",
                     "success": "true",
                     "language": lang,
@@ -257,16 +311,20 @@ async def query(request: QueryRequest):
         if is_image_request(request.query):
             image_prompt = extract_prompt(request.query)
             
+            # Enhance prompt with quality tags
+            enhanced_prompt = await enhance_prompt_with_llm(image_prompt, lang)
+            
             try:
                 pipe = load_sdxl()
-                print(f"Generating image: {image_prompt}")
+                print(f"Generating image: {enhanced_prompt}")
                 
+                # Higher quality settings for SDXL
                 image = pipe(
-                    prompt=image_prompt,
-                    num_inference_steps=4,
-                    guidance_scale=0.0,
-                    height=512,
-                    width=512
+                    prompt=enhanced_prompt,
+                    num_inference_steps=8,  # More steps for better quality
+                    guidance_scale=1.0,  # Some guidance for color accuracy
+                    height=1024,  # Higher resolution
+                    width=1024,
                 ).images[0]
                 
                 # Convert to base64
@@ -285,7 +343,7 @@ async def query(request: QueryRequest):
                     "done": "true",
                     "answer": messages.get(lang, messages['sk']),
                     "image_base64": img_base64,
-                    "prompt": image_prompt,
+                    "prompt": enhanced_prompt,
                     "agent_name": "TvojTon",
                     "success": "true",
                     "language": lang,
@@ -377,12 +435,13 @@ async def generate_image(request: ImageRequest):
         pipe = load_sdxl()
         print(f"Generating image: {request.prompt}")
         
+        # Higher quality settings
         image = pipe(
             prompt=request.prompt,
-            num_inference_steps=4,
-            guidance_scale=0.0,
-            height=512,
-            width=512
+            num_inference_steps=8,
+            guidance_scale=1.0,
+            height=1024,
+            width=1024
         ).images[0]
         
         # Convert to base64
@@ -394,7 +453,7 @@ async def generate_image(request: ImageRequest):
             "success": True,
             "image_base64": img_base64,
             "prompt": request.prompt,
-            "model": "SDXL Turbo"
+            "model": "SDXL Turbo (enhanced)"
         }
     except Exception as e:
         return {
@@ -410,11 +469,12 @@ async def generate_video(request: VideoRequest):
         pipe = load_video()
         print(f"Generating video: {request.prompt}")
         
+        # Higher quality settings
         video_frames = pipe(
             prompt=request.prompt,
-            num_inference_steps=10,
-            height=256,
-            width=256,
+            num_inference_steps=25,
+            height=320,
+            width=576,
         ).frames[0]
         
         # Convert frames to uint8
