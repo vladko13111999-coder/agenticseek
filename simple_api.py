@@ -5,6 +5,7 @@ import base64
 import time
 import tempfile
 import numpy as np
+from datetime import datetime
 from fastapi import FastAPI, BackgroundTasks
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -35,6 +36,52 @@ app.add_middleware(
 # Models (lazy loaded)
 sdxl_pipe = None
 video_pipe = None
+
+# Brand names for models
+MODEL_BRAND_NAMES = {
+    "gemma3:4b": "Twin Light",
+    "gemma3:12b": "Twin Pro",
+    "qwen2.5:14b": "Twin Research",
+    "qwen2.5-coder:14b": "Twin Builder",
+    "sdxl-turbo": "Twin Vision",
+    "stable-video-diffusion": "Twin Studio",
+    "stable-diffusion": "Twin Vision",
+    "flux": "Twin Vision",
+    "mochi": "Twin Studio",
+    "ltx-video": "Twin Studio",
+    "zeroscope": "Twin Studio",
+}
+
+def get_brand_name(model_id: str) -> str:
+    """Get branded name for a model"""
+    model_lower = model_id.lower()
+    for key, brand in MODEL_BRAND_NAMES.items():
+        if key in model_lower:
+            return brand
+    return model_id
+
+class ThoughtLogger:
+    """Logger for tracking agent thoughts/steps"""
+    def __init__(self):
+        self.thoughts = []
+    
+    def add(self, step: str, model: str = None, details: str = None):
+        entry = {
+            "step": step,
+            "timestamp": datetime.now().isoformat(),
+        }
+        if model:
+            entry["model"] = model
+            entry["brand"] = get_brand_name(model)
+        if details:
+            entry["details"] = details
+        self.thoughts.append(entry)
+    
+    def get_all(self):
+        return self.thoughts
+    
+    def reset(self):
+        self.thoughts = []
 
 def load_sdxl():
     global sdxl_pipe
@@ -264,7 +311,7 @@ async def health():
         vram = torch.cuda.memory_allocated() / 1e9
     return {
         "status": "healthy",
-        "version": "1.3.0",
+        "version": "1.4.0",
         "provider": "ollama",
         "sdxl_loaded": sdxl_pipe is not None,
         "vram_gb": round(vram, 2),
@@ -273,19 +320,26 @@ async def health():
 
 @app.post("/query")
 async def query(request: QueryRequest):
+    thoughts = ThoughtLogger()
+    
     try:
         lang = detect_language(request.query)
+        thoughts.add("Rozpoznávam jazyk", details=f"Zistený jazyk: {lang}")
         
         # Check if this is a video request
         if is_video_request(request.query):
             video_prompt = extract_prompt(request.query)
+            thoughts.add("Rozpoznávam požiadavku", details="Požiadavka na generovanie videa")
             
             # Enhance prompt with motion descriptors
+            thoughts.add("Vylepšujem prompt", model="gemma3:12b")
             enhanced_prompt = await enhance_prompt_with_llm(video_prompt, lang)
+            thoughts.add("Prompt vylepšený", details=enhanced_prompt[:50] + "..." if len(enhanced_prompt) > 50 else enhanced_prompt)
             
             try:
                 # First generate an image, then create video from it
                 sdxl = load_sdxl()
+                thoughts.add("Generujem náhľadový obrázok", model="sdxl-turbo")
                 print(f"Generating image for video: {enhanced_prompt}")
                 
                 # Generate source image
@@ -296,22 +350,25 @@ async def query(request: QueryRequest):
                     height=512,
                     width=512
                 ).images[0]
+                thoughts.add("Náhľadový obrázok vygenerovaný", model="sdxl-turbo")
                 
                 # Unload SDXL to free VRAM for SVD
                 del sdxl
                 torch.cuda.empty_cache()
                 
                 # Now generate video from image using SVD
-                video_pipe = load_video()
+                video_pipe_model = load_video()
+                thoughts.add("Vytváram video z obrázka", model="stable-video-diffusion")
                 print(f"Generating video from image...")
                 
-                video_frames = video_pipe(
+                video_frames = video_pipe_model(
                     image=source_image,
                     num_frames=25,
                     decode_chunk_size=4,
                     num_inference_steps=25,
                     generator=torch.Generator(device='cuda').manual_seed(42),
                 ).frames[0]
+                thoughts.add("Video vygenerované cez Twin Studio", model="stable-video-diffusion", details="25 snímkov")
                 
                 # Convert to MP4
                 mp4_base64 = frames_to_mp4(video_frames, fps=8)
@@ -334,6 +391,7 @@ async def query(request: QueryRequest):
                     "blocks": {"video": mp4_base64},
                     "status": "Ready",
                     "uid": "test-123",
+                    "thoughts": thoughts.get_all(),
                 }
             except Exception as e:
                 return {
@@ -344,17 +402,22 @@ async def query(request: QueryRequest):
                     "blocks": {},
                     "status": "Error",
                     "uid": "test-123",
+                    "thoughts": thoughts.get_all(),
                 }
         
         # Check if this is an image request
         if is_image_request(request.query):
             image_prompt = extract_prompt(request.query)
+            thoughts.add("Rozpoznávam požiadavku", details="Požiadavka na generovanie obrázka")
             
             # Enhance prompt with quality tags
+            thoughts.add("Vylepšujem prompt", model="gemma3:12b")
             enhanced_prompt = await enhance_prompt_with_llm(image_prompt, lang)
+            thoughts.add("Prompt vylepšený", details=enhanced_prompt[:50] + "..." if len(enhanced_prompt) > 50 else enhanced_prompt)
             
             try:
                 pipe = load_sdxl()
+                thoughts.add("Generujem obrázok pomocou Twin Vision", model="sdxl-turbo")
                 print(f"Generating image: {enhanced_prompt}")
                 
                 # Higher quality settings for SDXL
@@ -365,6 +428,7 @@ async def query(request: QueryRequest):
                     height=1024,  # Higher resolution
                     width=1024,
                 ).images[0]
+                thoughts.add("Obrázok vygenerovaný", model="sdxl-turbo", details="1024x1024")
                 
                 # Convert to base64
                 buffer = io.BytesIO()
@@ -389,6 +453,7 @@ async def query(request: QueryRequest):
                     "blocks": {"image": img_base64},
                     "status": "Ready",
                     "uid": "test-123",
+                    "thoughts": thoughts.get_all(),
                 }
             except Exception as e:
                 return {
@@ -399,10 +464,11 @@ async def query(request: QueryRequest):
                     "blocks": {},
                     "status": "Error",
                     "uid": "test-123",
+                    "thoughts": thoughts.get_all(),
                 }
         
         # Regular chat request
-        lang = detect_language(request.query)
+        thoughts.add("Spracovávam chat požiadavku", details=f"Dotaz: {request.query[:50]}...")
         
         system_prompts = {
             'sk': "SLOVAK ONLY. You MUST respond only in Slovak language. Never use Czech words. Response: Áno, viem po slovensky.",
@@ -412,6 +478,7 @@ async def query(request: QueryRequest):
         }
         
         system_msg = system_prompts.get(lang, system_prompts['sk'])
+        thoughts.add("Odosielam požiadavku na Twin Pro", model="gemma3:12b")
         
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
@@ -432,6 +499,7 @@ async def query(request: QueryRequest):
             response.raise_for_status()
             result = response.json()
             answer = result.get("message", {}).get("content", "No response")
+            thoughts.add("Odpoveď prijatá od Twin Pro", model="gemma3:12b", details=f"Na {len(answer)} znakov")
             return {
                 "done": "true",
                 "answer": answer.strip(),
@@ -442,6 +510,7 @@ async def query(request: QueryRequest):
                 "blocks": {},
                 "status": "Ready",
                 "uid": "test-123",
+                "thoughts": thoughts.get_all(),
             }
     except httpx.HTTPError as e:
         return {
@@ -453,6 +522,7 @@ async def query(request: QueryRequest):
             "blocks": {},
             "status": "Error",
             "uid": "test-123",
+            "thoughts": thoughts.get_all(),
         }
     except Exception as e:
         return {
@@ -464,6 +534,7 @@ async def query(request: QueryRequest):
             "blocks": {},
             "status": "Error",
             "uid": "test-123",
+            "thoughts": thoughts.get_all(),
         }
 
 
