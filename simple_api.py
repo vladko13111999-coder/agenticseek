@@ -55,6 +55,146 @@ MODEL_BRAND_NAMES = {
     "zeroscope": "Video Forge",
 }
 
+# Skills storage
+SKILLS_DIR = "/workspace/agenticseek/skills"
+AVAILABLE_SKILLS = []
+
+def ensure_skills_dir():
+    """Create skills directory if it doesn't exist"""
+    os.makedirs(SKILLS_DIR, exist_ok=True)
+
+def load_skills():
+    """Load all skills from disk"""
+    global AVAILABLE_SKILLS
+    ensure_skills_dir()
+    AVAILABLE_SKILLS = []
+    for f in os.listdir(SKILLS_DIR):
+        if f.endswith('.md'):
+            skill_path = os.path.join(SKILLS_DIR, f)
+            with open(skill_path, 'r') as file:
+                content = file.read()
+                skill_name = f[:-3]
+                AVAILABLE_SKILLS.append({
+                    "name": skill_name,
+                    "path": skill_path,
+                    "content": content
+                })
+
+def save_skill(name: str, content: str) -> str:
+    """Save a skill to disk"""
+    ensure_skills_dir()
+    safe_name = re.sub(r'[^a-zA-Z0-9_-]', '_', name)
+    skill_path = os.path.join(SKILLS_DIR, f"{safe_name}.md")
+    with open(skill_path, 'w') as file:
+        file.write(content)
+    return skill_path
+
+async def generate_skill(description: str) -> dict:
+    """Generate a skill using qwen2.5-coder:14b"""
+    skill_prompt = f'''Generuj skill pre Tvojton AI asistenta v nasledujúcom formáte:
+
+# [Názov skillu]
+
+## Metaúdaje
+- **Názov**: [Názov]
+- **Verzia**: 1.0
+- **Autor**: Twin AI
+- **Dátum**: {datetime.now().strftime("%Y-%m-%d")}
+
+## Popis
+[Krátky popis čo skill robí]
+
+## Parametre
+- `param1`: [popis parametra]
+- `param2`: [popis parametra]
+
+## Príklad použitia
+```python
+# Príklad kódu
+vysledok = moja_funkcia(param1="hodnota")
+```
+
+## Implementácia
+```python
+def moja_funkcia(param1: str) -> str:
+    """
+    [Popis funkcie]
+    """
+    # Tvoja implementácia
+    return f"Výsledok: {{param1}}"
+```
+
+## Poznámky
+[Poznámky alebo dodatočné informácie]
+
+---
+
+POŽIADAVKA: {description}
+
+Vygeneruj kompletný skill podľa požiadavky vyššie.'''
+
+    try:
+        async with httpx.AsyncClient(timeout=180.0) as client:
+            response = await client.post(
+                f"{OLLAMA_URL}/api/chat",
+                json={
+                    "model": "qwen2.5-coder:14b",
+                    "messages": [
+                        {"role": "system", "content": "Si Coder Agent. Generuješ Python kód pre Tvojton AI. Odpovedz VŽDY v slovenčine."},
+                        {"role": "user", "content": skill_prompt}
+                    ],
+                    "stream": False,
+                    "options": {
+                        "temperature": 0.7,
+                        "num_predict": 2000,
+                    }
+                },
+            )
+            result = response.json()
+            code = result.get("message", {}).get("content", "")
+            
+            name_match = re.search(r'#\s*(.+?)(?:\n|$)', code)
+            skill_name = name_match.group(1).strip() if name_match else description[:50]
+            
+            skill_path = save_skill(skill_name, code)
+            load_skills()
+            
+            return {
+                "success": True,
+                "name": skill_name,
+                "path": skill_path,
+                "content": code
+            }
+    except Exception as e:
+        return {
+            "success": False,
+            "error": str(e)
+        }
+
+def get_skills_context() -> str:
+    """Get context string of all available skills"""
+    if not AVAILABLE_SKILLS:
+        return "Žiadne skills nie sú k dispozícii."
+    
+    context = "Dostupné skills:\n\n"
+    for skill in AVAILABLE_SKILLS:
+        context += f"## {skill['name']}\n"
+        context += f"Path: {skill['path']}\n\n"
+    return context
+
+def is_skill_request(text: str) -> bool:
+    """Check if user wants to create a skill"""
+    text_lower = text.lower()
+    skill_keywords = [
+        'vytvor skill', 'vytvoř skill', 'create skill', 'new skill',
+        'sprav skill', 'make skill', 'generuj skill', 'generate skill',
+        'pridaj skill', 'add skill'
+    ]
+    for kw in skill_keywords:
+        if kw in text_lower:
+            return True
+    return False
+
 def get_brand_name(model_id: str) -> str:
     """Get branded name for a model"""
     model_lower = model_id.lower()
@@ -148,6 +288,9 @@ class QueryRequest(BaseModel):
     query: str
     history: list = []
     model: str | None = None
+
+class SkillRequest(BaseModel):
+    description: str
 
 
 class ImageRequest(BaseModel):
@@ -575,6 +718,33 @@ async def generate_streaming_response(query: str, lang: str, history: list = Non
             yield f"data: {json.dumps({'type': 'error', 'data': str(e)})}\n\n"
             return
     
+    # Check for skill generation request
+    if is_skill_request(query):
+        thoughts.add("Detegujem požiadavku na vytvorenie skillu", model="qwen2.5-coder:14b")
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        thoughts.add("Používam Coder Agent na generovanie skillu...", model="qwen2.5-coder:14b")
+        yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+        
+        skill_result = await generate_skill(query)
+        
+        if skill_result.get("success"):
+            thoughts.add("Skill vygenerovaný!", model="qwen2.5-coder:14b", details=f"Uložený: {skill_result['path']}")
+            yield f"data: {json.dumps({'type': 'thoughts', 'data': thoughts.get_all()})}\n\n"
+            
+            content = f"✅ Skill bol úspešne vytvorený!\n\n"
+            content += f"**Názov:** {skill_result['name']}\n\n"
+            content += f"**Cesta:** `{skill_result['path']}`\n\n"
+            content += f"**Kód:**\n```\n{skill_result['content'][:1000]}...\n```\n"
+            
+            yield f"data: {json.dumps({'type': 'chunk', 'data': content})}\n\n"
+            yield f"data: {json.dumps({'type': 'done', 'thoughts': thoughts.get_all(), 'full_answer': content})}\n\n"
+        else:
+            thoughts.add("Chyba pri generovaní skillu", model="qwen2.5-coder:14b", details=str(skill_result.get("error", "Unknown error")))
+            yield f"data: {json.dumps({'type': 'error', 'data': str(skill_result.get('error', 'Unknown error'))})}\n\n"
+        
+        return
+    
     # Check for URL in query
     url = extract_url(query)
     if url:
@@ -668,6 +838,43 @@ async def stream_query(request: QueryRequest):
             "X-Accel-Buffering": "no",
         }
     )
+
+@app.post("/generate-skill")
+async def generate_skill_endpoint(request: SkillRequest):
+    """Generate a new skill using Coder Agent"""
+    print(f"Generating skill: {request.description}")
+    result = await generate_skill(request.description)
+    return result
+
+@app.get("/skills")
+async def list_skills():
+    """List all available skills"""
+    if not AVAILABLE_SKILLS:
+        load_skills()
+    return {
+        "success": True,
+        "skills": [{"name": s["name"], "path": s["path"]} for s in AVAILABLE_SKILLS]
+    }
+
+@app.get("/skills/{skill_name}")
+async def get_skill(skill_name: str):
+    """Get a specific skill by name"""
+    for skill in AVAILABLE_SKILLS:
+        if skill["name"] == skill_name:
+            return {
+                "success": True,
+                "skill": skill
+            }
+    return {
+        "success": False,
+        "error": f"Skill '{skill_name}' not found"
+    }
+
+@app.on_event("startup")
+async def startup_event():
+    """Load skills on startup"""
+    load_skills()
+    print(f"Loaded {len(AVAILABLE_SKILLS)} skills")
 
 
 @app.post("/generate-image")
