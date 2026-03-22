@@ -42,14 +42,14 @@ MODEL_BRAND_NAMES = {
     "gemma3:4b": "Twin Light",
     "gemma3:12b": "Twin Pro",
     "qwen2.5:14b": "Twin Research",
-    "qwen2.5-coder:14b": "Twin Builder",
-    "sdxl-turbo": "Twin Vision",
-    "stable-video-diffusion": "Twin Studio",
-    "stable-diffusion": "Twin Vision",
-    "flux": "Twin Vision",
-    "mochi": "Twin Studio",
-    "ltx-video": "Twin Studio",
-    "zeroscope": "Twin Studio",
+    "qwen2.5-coder:14b": "Coder Agent",
+    "sdxl-turbo": "Image Studio",
+    "stable-video-diffusion": "Video Forge",
+    "stable-diffusion": "Image Studio",
+    "flux": "Video Forge",
+    "mochi": "Video Forge",
+    "ltx-video": "Video Forge",
+    "zeroscope": "Video Forge",
 }
 
 def get_brand_name(model_id: str) -> str:
@@ -311,7 +311,7 @@ async def health():
         vram = torch.cuda.memory_allocated() / 1e9
     return {
         "status": "healthy",
-        "version": "1.5.0",
+        "version": "1.6.0",
         "provider": "ollama",
         "sdxl_loaded": sdxl_pipe is not None,
         "vram_gb": round(vram, 2),
@@ -362,7 +362,7 @@ async def query(request: QueryRequest):
             
             try:
                 pipe = load_sdxl()
-                thoughts.add("Generujem obrázok pomocou Twin Vision", model="sdxl-turbo")
+                thoughts.add("Generujem obrázok cez Image Studio", model="sdxl-turbo")
                 print(f"Generating image: {enhanced_prompt}")
                 
                 # Higher quality settings for SDXL
@@ -413,7 +413,7 @@ async def query(request: QueryRequest):
                 }
         
         # Regular chat request
-        thoughts.add("Spracovávam chat požiadavku", details=f"Dotaz: {request.query[:50]}...")
+        thoughts.add("Spracovávam požiadavku", details=f"Dotaz: {request.query[:50]}...")
         
         system_prompts = {
             'sk': "SLOVAK ONLY. You MUST respond only in Slovak language. Never use Czech words. Response: Áno, viem po slovensky.",
@@ -423,7 +423,7 @@ async def query(request: QueryRequest):
         }
         
         system_msg = system_prompts.get(lang, system_prompts['sk'])
-        thoughts.add("Odosielam požiadavku na Twin Pro", model="gemma3:12b")
+        thoughts.add("Používam Twin Pro na odpoveď", model="gemma3:12b")
         
         async with httpx.AsyncClient(timeout=120.0) as client:
             response = await client.post(
