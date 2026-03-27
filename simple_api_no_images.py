@@ -27,7 +27,7 @@ OLLAMA_HOST = os.getenv("OLLAMA_HOST", "http://localhost:11434")
 
 class QueryRequest(BaseModel):
     query: str
-    model: str = "llama3.2"
+    model: str = "gemma3:4b"
 
 def detect_language(text: str) -> str:
     text_lower = text.lower()
