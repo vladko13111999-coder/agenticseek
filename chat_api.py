@@ -7,6 +7,11 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
+from router import (
+    analyze_url, competitor_analysis, 
+    format_url_analysis, format_competitor_analysis,
+    process_query, web_search
+)
 
 app = FastAPI(title="Brand Twin AI - OpenClaw Enhanced")
 
@@ -29,162 +34,109 @@ class QueryRequest(BaseModel):
     history: Optional[List[Message]] = []
     model: Optional[str] = "gemma3:12b"
 
-class WebSearchRequest(BaseModel):
-    query: str
-    num_results: int = 5
-
 class AnalyzeUrlRequest(BaseModel):
     url: str
 
 class CompetitorRequest(BaseModel):
-    urls: List[str]
+    target_url: str
 
-class SendEmailRequest(BaseModel):
-    to: str
-    subject: str
-    body: str
+conversation_state = {}
 
-async def ollama_chat(model: str, messages: List[dict], stream: bool = True):
+async def ollama_stream(model: str, messages: List[dict]):
     async with httpx.AsyncClient(timeout=180.0) as client:
-        payload = {"model": model, "messages": messages, "stream": stream}
+        payload = {"model": model, "messages": messages, "stream": True}
         async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as response:
             async for line in response.aiter_lines():
                 if line:
                     yield line + "\n"
 
-async def web_search(query: str, num_results: int = 5) -> List[dict]:
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            response = await client.get(
-                "https://duckduckgo.com/html/",
-                params={"q": query},
-                headers={"User-Agent": "Mozilla/5.0"}
-            )
-            results = []
-            if response.status_code == 200:
-                from bs4 import BeautifulSoup
-                soup = BeautifulSoup(response.text, "html.parser")
-                for item in soup.select(".result")[:num_results]:
-                    title = item.select_one(".result__title")
-                    link = item.select_one("a")
-                    snippet = item.select_one(".result__snippet")
-                    if title and link:
-                        results.append({
-                            "title": title.get_text(strip=True),
-                            "url": link.get("href", ""),
-                            "snippet": snippet.get_text(strip=True) if snippet else ""
-                        })
-            return results
-    except Exception as e:
-        return [{"error": str(e)}]
-
-async def analyze_url(url: str) -> dict:
-    try:
-        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
-            response = await client.get(url, headers={"User-Agent": "Mozilla/5.0"})
-            from bs4 import BeautifulSoup
-            soup = BeautifulSoup(response.text, "html.parser")
-            
-            title = soup.find("title")
-            meta_desc = soup.find("meta", attrs={"name": "description"})
-            og_title = soup.find("meta", attrs={"property": "og:title"})
-            og_image = soup.find("meta", attrs={"property": "og:image"})
-            h1_tags = [h.get_text(strip=True) for h in soup.find_all("h1")]
-            h2_tags = [h.get_text(strip=True) for h in soup.find_all("h2")]
-            canonical = soup.find("link", attrs={"rel": "canonical"})
-            
-            return {
-                "status": "success",
-                "url": url,
-                "title": title.get_text(strip=True) if title else "No title",
-                "meta_description": meta_desc.get("content", "") if meta_desc else "",
-                "og_title": og_title.get("content", "") if og_title else "",
-                "og_image": og_image.get("content", "") if og_image else "",
-                "h1_count": len(h1_tags),
-                "h1_tags": h1_tags[:5],
-                "h2_tags": h2_tags[:10],
-                "canonical": canonical.get("href", "") if canonical else url,
-                "http_status": response.status_code
-            }
-    except Exception as e:
-        return {"status": "error", "error": str(e)}
-
-async def generate_response(query: str, model: str = "gemma3:12b"):
+async def generate_response(query: str, session_id: str = "default", model: str = "gemma3:12b"):
     thoughts = []
     full_answer = ""
     
-    if any(keyword in query.lower() for keyword in ["analyzuj", "search", "vyhľadaj", "url", "stránku", "porovnaj"]):
-        thoughts.append({"step": "Detekovaná požiadavka na analýzu/webove vyhľadávanie", "details": "Používam OpenClaw nástroje"})
+    thoughts.append({"step": "Analýza požiadavky", "details": "Spracúvam..."})
+    yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
+    
+    result, followup, action = await process_query(query, model)
+    
+    if action == "analyze_competitors":
+        conversation_state[session_id] = {"awaiting_competitor": True, "target_url": query}
+        thoughts.append({"step": "Analýza dokončená", "details": "Čakám na odpoveď o konkurencii"})
         yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
         
-        if "url" in query.lower() or "stránku" in query.lower():
+        for word in result.split():
+            yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+            full_answer += word + " "
+            await asyncio.sleep(0.01)
+        
+        yield "data: " + json.dumps({"type": "chunk", "data": "\n\n" + followup + "\n"}) + "\n\n"
+        full_answer += "\n\n" + followup
+        
+    elif result == "__RUN_COMPETITOR_ANALYSIS__":
+        state = conversation_state.get(session_id, {})
+        
+        if state.get("awaiting_competitor"):
+            target_url = state.get("target_url", "")
+            
             import re
-            urls = re.findall(r'https?://[^\s]+', query)
-            for url in urls[:1]:
-                thoughts.append({"step": "Analýza URL: " + url, "details": "Získavanie dát..."})
+            urls = re.findall(r'https?://[^\s]+', target_url)
+            if urls:
+                target = urls[0]
+                
+                thoughts.append({"step": "Spúšťam analýzu konkurencie", "details": "Hľadám konkurentov..."})
                 yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
                 
-                analysis = await analyze_url(url)
-                thoughts.append({"step": "Analýza dokončená", "details": "Status: " + str(analysis.get("status", "unknown"))})
-                yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
+                yield "data: " + json.dumps({"type": "chunk", "data": "🔍 **Analyzujem konkurenciu pre:** " + target + "\n\n"}) + "\n\n"
+                full_answer += "🔍 **Analyzujem konkurenciu pre:** " + target + "\n\n"
                 
-                header = "**Analýza stránky " + url + "**\n\n"
-                yield "data: " + json.dumps({"type": "chunk", "data": header}) + "\n\n"
-                full_answer += header
+                analysis = await competitor_analysis(target, model)
+                comp_result = format_competitor_analysis(analysis)
                 
-                if analysis.get("status") == "success":
-                    summary = """📊 **Výsledky analýzy:**
-
-**Titulok:** """ + analysis.get("title", "N/A") + """
-**Meta description:** """ + analysis.get("meta_description", "N/A") + """
-**Počet H1:** """ + str(analysis.get("h1_count", 0)) + """
-**H1 nadpisy:** """ + ", ".join(analysis.get("h1_tags", [])[:3]) or "Žiadne" + """
-
-**OG Title:** """ + analysis.get("og_title", "N/A") + """
-**Canonical:** """ + analysis.get("canonical", "N/A") + """
-**HTTP Status:** """ + str(analysis.get("http_status", "N/A")) + """
-"""
-                    for word in summary.split():
-                        yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
-                        full_answer += word + " "
-                        await asyncio.sleep(0.02)
-                else:
-                    error_msg = "❌ Chyba pri analýze: " + str(analysis.get("error", "Neznáma chyba"))
-                    yield "data: " + json.dumps({"type": "chunk", "data": error_msg}) + "\n\n"
-                    full_answer += error_msg
-        
-        elif any(word in query.lower() for word in ["vyhľadaj", "search", "nájdi"]):
-            search_query = query.lower()
-            for w in ["vyhľadaj", "search", "nájdi"]:
-                search_query = search_query.replace(w, "").strip()
-            
-            thoughts.append({"step": "Vyhľadávanie: " + search_query, "details": "Hľadám na webe..."})
+                for word in comp_result.split():
+                    yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+                    full_answer += word + " "
+                    await asyncio.sleep(0.01)
+                
+                conversation_state[session_id] = {}
+                
+                yield "data: " + json.dumps({"type": "chunk", "data": "\n\n---\n\n📝 **Môžem vám ešte pomôcť?**\n- Napísať SEO blog\n- Pripraviť email\n- Vyhľadať informácie\n"}) + "\n\n"
+                full_answer += "\n\n---\n\n📝 **Môžem vám ešte pomôcť?**\n- Napísať SEO blog\n- Pripraviť email\n- Vyhľadať informácie\n"
+        else:
+            thoughts.append({"step": "Spracúvam požiadavku", "details": "Odpovedám cez Ollama..."})
             yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
             
-            results = await web_search(search_query)
-            thoughts.append({"step": "Vyhľadávanie dokončené", "details": "Nájdených " + str(len(results)) + " výsledkov"})
-            yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
+            system_msg = "You are Brand Twin AI assistant for tvojton.online. ALWAYS respond in Slovak."
+            messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": query}]
             
-            header = "🔍 **Výsledky vyhľadávania pre: " + search_query + "**\n\n"
-            yield "data: " + json.dumps({"type": "chunk", "data": header}) + "\n\n"
-            full_answer += header
-            
-            for i, r in enumerate(results[:5], 1):
-                if isinstance(r, dict) and "title" in r:
-                    line = str(i) + ". **" + r["title"] + "**\n   " + r.get("url", "") + "\n   " + r.get("snippet", "") + "\n\n"
-                    for word in line.split():
-                        yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
-                        full_answer += word + " "
-                        await asyncio.sleep(0.02)
-    else:
-        thoughts.append({"step": "Spracúvam požiadavku cez Ollama", "details": "Model: " + model})
+            async for line in ollama_stream(model, messages):
+                try:
+                    data = json.loads(line)
+                    if "message" in data and "content" in data["message"]:
+                        chunk = data["message"]["content"]
+                        yield "data: " + json.dumps({"type": "chunk", "data": chunk}) + "\n\n"
+                        full_answer += chunk
+                    if data.get("done"):
+                        break
+                except:
+                    pass
+    
+    elif action == None and result:
+        thoughts.append({"step": "Odpoveď pripravená", "details": "Hotovo"})
         yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
         
-        system_msg = "You are Brand Twin AI assistant for tvojton.online. ALWAYS respond in Slovak language only. Be friendly and helpful."
-        messages = [{"role": "system", "content": system_msg}]
-        messages.append({"role": "user", "content": query})
+        for word in result.split():
+            yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+            full_answer += word + " "
+            await asyncio.sleep(0.01)
+    
+    else:
+        thoughts.append({"step": "Spracúvam požiadavku", "details": "Odpovedám cez Ollama..."})
+        yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
         
-        async for line in ollama_chat(model, messages, stream=True):
+        system_msg = "You are Brand Twin AI assistant for tvojton.online. ALWAYS respond in Slovak. Be helpful and friendly."
+        messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": query}]
+        
+        async for line in ollama_stream(model, messages):
             try:
                 data = json.loads(line)
                 if "message" in data and "content" in data["message"]:
@@ -221,37 +173,33 @@ async def health():
         "status": "healthy" if ollama_ok else "degraded",
         "ollama": "online" if ollama_ok else "offline",
         "openclaw": "online" if openclaw_ok else "offline",
-        "version": "2.0.0"
+        "version": "3.0.0"
     }
 
 @app.post("/stream-query")
 async def stream_query(request: QueryRequest):
+    session_id = request.history[-1].content[:50] if request.history else "default"
     return StreamingResponse(
-        generate_response(request.query, request.model),
+        generate_response(request.query, session_id, request.model),
         media_type="text/event-stream"
     )
-
-@app.post("/web-search")
-async def web_search_endpoint(req: WebSearchRequest):
-    results = await web_search(req.query, req.num_results)
-    return {"results": results}
 
 @app.post("/analyze-url")
 async def analyze_url_endpoint(req: AnalyzeUrlRequest):
     result = await analyze_url(req.url)
-    return result
+    formatted = format_url_analysis(result)
+    return {"result": result, "formatted": formatted}
 
 @app.post("/competitor-analysis")
-async def competitor_analysis(req: CompetitorRequest):
-    results = []
-    for url in req.urls:
-        analysis = await analyze_url(url)
-        results.append(analysis)
-    return {"results": results}
+async def competitor_analysis_endpoint(req: CompetitorRequest):
+    result = await competitor_analysis(req.target_url)
+    formatted = format_competitor_analysis(result)
+    return {"result": result, "formatted": formatted}
 
-@app.post("/send-email")
-async def send_email(req: SendEmailRequest):
-    return {"status": "simulated", "message": f"Email by bol poslaný na {req.to}", "subject": req.subject}
+@app.post("/web-search")
+async def web_search_endpoint(query: str, num_results: int = 5):
+    results = await web_search(query, num_results)
+    return {"results": results}
 
 if __name__ == "__main__":
     import uvicorn
