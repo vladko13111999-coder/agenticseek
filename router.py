@@ -288,7 +288,7 @@ async def process_query(query: str, model: str = "gemma3:12b") -> Tuple[str, Opt
     query_lower = query.lower()
     urls = re.findall(r'https?://[^s]+', query)
     
-    if 'analyzuj' in query_lower and urls:
+    if any(word in query_lower for word in ['analyzuj', 'analyza', 'analyze', 'analyzujem', 'analyzovat', 'analyzovat']) and urls:
         target_url = urls[0]
         thoughts = [{"step": "Detekovaná požiadavka na analýzu URL", "details": target_url}, {"step": "Spúšťam analýzu", "details": "Scraping, SEO..."}]
         analysis, analysis_thoughts = await analyze_url(target_url, model)
