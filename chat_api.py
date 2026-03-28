@@ -2,16 +2,12 @@ import os
 import json
 import asyncio
 import httpx
-from fastapi import FastAPI, Request
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import StreamingResponse
 from pydantic import BaseModel
 from typing import Optional, List
-from router import (
-    analyze_url, competitor_analysis, 
-    format_url_analysis, format_competitor_analysis,
-    process_query, web_search
-)
+from router import analyze_url, competitor_analysis, format_url_analysis_simple, process_query
 
 app = FastAPI(title="Brand Twin AI - OpenClaw Enhanced")
 
@@ -34,24 +30,7 @@ class QueryRequest(BaseModel):
     history: Optional[List[Message]] = []
     model: Optional[str] = "gemma3:12b"
 
-class AnalyzeUrlRequest(BaseModel):
-    url: str
-
-class CompetitorRequest(BaseModel):
-    target_url: str
-
 conversation_state = {"default": {"awaiting_competitor": False, "target_url": ""}}
-
-async def ollama_stream(model: str, messages: List[dict]):
-    async with httpx.AsyncClient(timeout=180.0) as client:
-        payload = {"model": model, "messages": messages, "stream": True}
-        async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as response:
-            async for line in response.aiter_lines():
-                if line:
-                    yield line + "\n"
-
-def get_session_id(history: List[Message]) -> str:
-    return "default"
 
 async def generate_response(query: str, session_id: str = "default", model: str = "gemma3:12b"):
     thoughts = []
@@ -68,11 +47,13 @@ async def generate_response(query: str, session_id: str = "default", model: str 
     if action == "awaiting_competitor":
         conversation_state[session_id] = {"awaiting_competitor": True, "target_url": query}
         
-        yield "data: " + json.dumps({"type": "chunk", "data": result}) + "\n\n"
-        full_answer += result
+        for word in result.split():
+            yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+            full_answer += word + " "
+            await asyncio.sleep(0.01)
         
-        yield "data: " + json.dumps({"type": "chunk", "data": followup}) + "\n\n"
-        full_answer += followup
+        yield "data: " + json.dumps({"type": "chunk", "data": "\n\n" + followup + "\n"}) + "\n\n"
+        full_answer += "\n\n" + followup
         
     elif result == "__RUN_COMPETITOR_ANALYSIS__":
         state = conversation_state.get(session_id, {})
@@ -88,31 +69,19 @@ async def generate_response(query: str, session_id: str = "default", model: str 
                 thoughts.append({"step": "Spúšťam analýzu konkurencie", "details": target})
                 yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
                 
-                yield "data: " + json.dumps({"type": "chunk", "data": "<div style='background:#e3f2fd;padding:15px;border-radius:8px;margin:10px 0;'><p style='margin:0;'><strong>🔍 Hľadám konkurentov...</strong></p></div>"}) + "\n\n"
-                full_answer += "<p>🔍 Hľadám konkurentov...</p>"
-                
-                analysis, analysis_thoughts = await competitor_analysis(target, model)
-                thoughts.extend(analysis_thoughts)
+                comp_result, comp_thoughts = await competitor_analysis(target, model)
+                thoughts.extend(comp_thoughts)
                 yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
                 
-                comp_result = format_competitor_analysis(analysis)
+                for word in comp_result.split():
+                    yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+                    full_answer += word + " "
+                    await asyncio.sleep(0.01)
                 
-                yield "data: " + json.dumps({"type": "chunk", "data": comp_result}) + "\n\n"
-                full_answer += comp_result
+                yield "data: " + json.dumps({"type": "chunk", "data": "\n\n---\nMôžem vám s niečím ďalším pomôcť?Napíšte mi napríklad: 'Napíš SEO blog' alebo 'Priprav email'", "full_answer": ""}) + "\n\n"
+                full_answer += "\n\n---\nMôžem vám s niečím ďalším pomôcť?"
                 
                 conversation_state[session_id] = {"awaiting_competitor": False, "target_url": ""}
-                
-                offer = """<div style="background:#f8f9fa;padding:15px;border-radius:8px;margin-top:15px;">
-<p style="margin:0 0 10px 0;font-weight:bold;">📝 Môžem vám ešte pomôcť:</p>
-<ul style="margin:0;padding-left:20px;">
-<li>📝 <strong>Napísať SEO blog</strong></li>
-<li>🔍 <strong>Vyhľadať informácie</strong></li>
-<li>📧 <strong>Pripraviť email</strong></li>
-</ul>
-</div>"""
-                
-                yield "data: " + json.dumps({"type": "chunk", "data": offer}) + "\n\n"
-                full_answer += offer
         else:
             thoughts.append({"step": "Spracúvam požiadavku", "details": "Odpovedám cez AI..."})
             yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
@@ -120,24 +89,26 @@ async def generate_response(query: str, session_id: str = "default", model: str 
             system_msg = "You are Brand Twin AI assistant for tvojton.online. ALWAYS respond in Slovak."
             messages = [{"role": "system", "content": system_msg}, {"role": "user", "content": query}]
             
-            async for line in ollama_stream(model, messages):
-                try:
-                    data = json.loads(line)
-                    if "message" in data and "content" in data["message"]:
-                        chunk = data["message"]["content"]
-                        yield "data: " + json.dumps({"type": "chunk", "data": chunk}) + "\n\n"
-                        full_answer += chunk
-                    if data.get("done"):
-                        break
-                except:
-                    pass
-    
+            async with httpx.AsyncClient(timeout=180.0) as client:
+                payload = {"model": model, "messages": messages, "stream": True}
+                async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=payload) as response:
+                    async for line in response.aiter_lines():
+                        if line:
+                            try:
+                                data = json.loads(line)
+                                if "message" in data and "content" in data["message"]:
+                                    chunk = data["message"]["content"]
+                                    yield "data: " + json.dumps({"type": "chunk", "data": chunk}) + "\n\n"
+                                    full_answer += chunk
+                                if data.get("done"):
+                                    break
+                            except:
+                                pass
     else:
-        thoughts.append({"step": "Odpoveď pripravená", "details": "Zobrazujem"})
-        yield "data: " + json.dumps({"type": "thoughts", "data": thoughts}) + "\n\n"
-        
-        yield "data: " + json.dumps({"type": "chunk", "data": result}) + "\n\n"
-        full_answer += result
+        for word in result.split():
+            yield "data: " + json.dumps({"type": "chunk", "data": word + " "}) + "\n\n"
+            full_answer += word + " "
+            await asyncio.sleep(0.01)
     
     yield "data: " + json.dumps({"type": "done", "full_answer": full_answer, "thoughts": thoughts}) + "\n\n"
 
@@ -164,32 +135,26 @@ async def health():
         "status": "healthy" if ollama_ok else "degraded",
         "ollama": "online" if ollama_ok else "offline",
         "openclaw": "online" if openclaw_ok else "offline",
-        "version": "3.1.0"
+        "version": "4.0.0"
     }
 
 @app.post("/stream-query")
 async def stream_query(request: QueryRequest):
     return StreamingResponse(
-        generate_response(request.query, get_session_id(request.history or []), request.model),
+        generate_response(request.query, "default", request.model),
         media_type="text/event-stream"
     )
 
 @app.post("/analyze-url")
-async def analyze_url_endpoint(req: AnalyzeUrlRequest):
-    result, thoughts = await analyze_url(req.url)
-    formatted = format_url_analysis(result)
-    return {"result": result, "formatted": formatted, "thoughts": thoughts}
+async def analyze_url_endpoint(url: str):
+    result, thoughts = await analyze_url(url)
+    formatted = format_url_analysis_simple(result)
+    return {"result": formatted, "thoughts": thoughts}
 
 @app.post("/competitor-analysis")
-async def competitor_analysis_endpoint(req: CompetitorRequest):
-    result, thoughts = await competitor_analysis(req.target_url)
-    formatted = format_competitor_analysis(result)
-    return {"result": result, "formatted": formatted, "thoughts": thoughts}
-
-@app.post("/web-search")
-async def web_search_endpoint(query: str, num_results: int = 5):
-    results = await web_search(query, num_results)
-    return {"results": results}
+async def competitor_analysis_endpoint(url: str):
+    result, thoughts = await competitor_analysis(url)
+    return {"result": result, "thoughts": thoughts}
 
 if __name__ == "__main__":
     import uvicorn
