@@ -1,11 +1,12 @@
 import os
 import json
 import re
+import time
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 import requests
 from bs4 import BeautifulSoup
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import List, Dict, Optional, Tuple
 from dataclasses import dataclass, field, asdict
 from enum import Enum
@@ -13,6 +14,14 @@ from enum import Enum
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 TELEGRAM_BOT_TOKEN = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TELEGRAM_CHAT_ID = os.getenv("TELEGRAM_CHAT_ID", "")
+
+ONECOM_API_KEY = os.getenv("ONECOM_API_KEY", "")
+ONECOM_SENDER = os.getenv("ONECOM_SENDER", "Tvojton")
+
+INFOBIP_API_KEY = os.getenv("INFOBIP_API_KEY", "")
+INFOBIP_BASE_URL = os.getenv("INFOBIP_BASE_URL", "https://api.infobip.com")
+INFOBIP_SENDER = os.getenv("INFOBIP_SENDER", "TvojtonAI")
+
 CAMPAIGNS_DIR = "/root/agenticseek/campaigns"
 
 os.makedirs(CAMPAIGNS_DIR, exist_ok=True)
@@ -253,6 +262,174 @@ def send_call_simulation(to_phone: str, script: str) -> Dict:
     print(f"[CALL] To: {to_phone}")
     return {"status": "simulated", "duration": 45, "result": "interested"}
 
+def make_call_infobip(phone: str, script: str) -> Dict:
+    if not INFOBIP_API_KEY:
+        return {"error": "INFOBIP_API_KEY not configured"}
+    
+    url = f"{INFOBIP_BASE_URL}/tts/3/single/advanced"
+    
+    headers = {
+        "Authorization": f"App {INFOBIP_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "from": INFOBIP_SENDER,
+        "to": phone,
+        "language": "sk",
+        "voice": {"name": " Petra"},
+        "text": script,
+        "rate": "8000",
+        "paragraphSpeed": "-5",
+        "record": True
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            return {
+                "status": "initiated",
+                "call_id": data.get(" CallsId", ""),
+                "message_id": data.get("messageId", "")
+            }
+        else:
+            return {"error": f"HTTP {response.status_code}", "details": response.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+def make_call_oneai(phone: str, script: str) -> Dict:
+    if not ONECOM_API_KEY:
+        return {"error": "ONECOM_API_KEY not configured"}
+    
+    url = "https://api.1com.cloud/v1/calls/text-to-speech"
+    
+    headers = {
+        "Authorization": f"Bearer {ONECOM_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    payload = {
+        "to": phone,
+        "from": ONECOM_SENDER,
+        "text": script,
+        "language": "sk-SK",
+        "voice": "女",
+        "webhook_url": ""
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code in [200, 201, 202]:
+            data = response.json()
+            return {
+                "status": "initiated",
+                "call_id": data.get("call_id", data.get("id", "")),
+                "duration_estimate": data.get("duration", 60)
+            }
+        else:
+            return {"error": f"HTTP {response.status_code}", "details": response.text}
+    except Exception as e:
+        return {"error": str(e)}
+
+def make_call(phone: str, script: str) -> Dict:
+    if not phone or len(phone) < 9:
+        return {"error": "Invalid phone number"}
+    
+    phone = re.sub(r'[^\d\+]', '', phone)
+    if not phone.startswith('+'):
+        phone = '+421' + phone.lstrip('0')
+    
+    if INFOBIP_API_KEY:
+        result = make_call_infobip(phone, script)
+        if "error" not in result:
+            return result
+    
+    if ONECOM_API_KEY:
+        result = make_call_oneai(phone, script)
+        if "error" not in result:
+            return result
+    
+    return {"error": "No call provider configured", "simulated": True, "phone": phone, "script": script}
+
+def send_sms_infobip(phone: str, message: str) -> Dict:
+    if not INFOBIP_API_KEY:
+        return {"error": "INFOBIP_API_KEY not configured"}
+    
+    url = f"{INFOBIP_BASE_URL}/sms/2/text/single"
+    
+    headers = {
+        "Authorization": f"App {INFOBIP_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    phone = re.sub(r'[^\d\+]', '', phone)
+    if not phone.startswith('+'):
+        phone = '+421' + phone.lstrip('0')
+    
+    payload = {
+        "from": INFOBIP_SENDER,
+        "to": phone,
+        "text": message
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code == 200:
+            data = response.json()
+            return {"status": "sent", "message_id": data.get("messages", [{}])[0].get("messageId", "")}
+        else:
+            return {"error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def send_sms_onecom(phone: str, message: str) -> Dict:
+    if not ONECOM_API_KEY:
+        return {"error": "ONECOM_API_KEY not configured"}
+    
+    url = "https://api.1com.cloud/v1/sms"
+    
+    headers = {
+        "Authorization": f"Bearer {ONECOM_API_KEY}",
+        "Content-Type": "application/json"
+    }
+    
+    phone = re.sub(r'[^\d\+]', '', phone)
+    if not phone.startswith('+'):
+        phone = '+421' + phone.lstrip('0')
+    
+    payload = {
+        "to": phone,
+        "from": ONECOM_SENDER,
+        "text": message
+    }
+    
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=30)
+        if response.status_code in [200, 201, 202]:
+            return {"status": "sent", "message_id": response.json().get("id", "")}
+        else:
+            return {"error": f"HTTP {response.status_code}"}
+    except Exception as e:
+        return {"error": str(e)}
+
+def send_sms(phone: str, message: str) -> Dict:
+    if not phone or len(phone) < 9:
+        return {"error": "Invalid phone number"}
+    
+    if INFOBIP_API_KEY:
+        result = send_sms_infobip(phone, message)
+        if "error" not in result:
+            return result
+    
+    if ONECOM_API_KEY:
+        result = send_sms_onecom(phone, message)
+        if "error" not in result:
+            return result
+    
+    print(f"[SMS] To: {phone}\nMessage: {message}")
+    return {"status": "simulated", "phone": phone}
+
 async def run_campaign_step(campaign_id: str) -> Dict:
     campaign = load_campaign(campaign_id)
     if not campaign:
@@ -406,7 +583,7 @@ Začnem hľadať zákazníkov..."""
     
     return response, campaign
 
-async def search_and_import_leads(campaign_id: str, query: str = None) -> List[Lead]:
+async def search_and_import_leads(campaign_id: str, query: str = "") -> List[Lead]:
     campaign = load_campaign(campaign_id)
     if not campaign:
         return []
@@ -462,3 +639,75 @@ def list_campaigns() -> List[Dict]:
                 if "error" not in s:
                     campaigns.append(s)
     return campaigns
+
+def generate_daily_report() -> str:
+    campaigns = list_campaigns()
+    
+    if not campaigns:
+        return "Žiadne aktívne kampane."
+    
+    report = "📊 DENNÝ REPORT - Tvojton AI\n"
+    report += "=" * 35 + "\n"
+    report += f"Dátum: {datetime.now().strftime('%d.%m.%Y')}\n\n"
+    
+    total_contacted = 0
+    total_interested = 0
+    total_remaining = 0
+    
+    for camp in campaigns:
+        if camp["status"] == "running":
+            total_contacted += camp["contacted"]
+            total_interested += camp["interested"]
+            total_remaining += camp["remaining"]
+            
+            report += f"🎯 {camp['target']}\n"
+            report += f"   Status: 🟢 Aktívna\n"
+            report += f"   Oslovených: {camp['contacted']}/{camp['limit']}\n"
+            report += f"   Zainteresovaných: {camp['interested']}\n"
+            report += f"   Zostáva: {camp['remaining']}\n\n"
+    
+    if campaigns:
+        report += "📈 SÚHRN:\n"
+        report += "-" * 20 + "\n"
+        report += f"Celkom oslovených: {total_contacted}\n"
+        report += f"Celkom zainteresovaných: {total_interested}\n"
+        report += f"Zostáva kontaktov: {total_remaining}\n"
+        if total_contacted > 0:
+            rate = round(total_interested / total_contacted * 100, 1)
+            report += f"Response rate: {rate}%\n"
+    
+    return report
+
+def send_daily_report() -> Dict:
+    report = generate_daily_report()
+    success = send_telegram(report)
+    return {"sent": success, "report": report}
+
+async def run_daily_campaign_step() -> Dict:
+    campaigns = list_campaigns()
+    results = []
+    
+    for camp in campaigns:
+        if camp["status"] == "running" and camp["remaining"] > 0:
+            result = await run_campaign_step(camp["id"])
+            results.append({
+                "campaign_id": camp["id"],
+                "result": result
+            })
+            
+            if camp["remaining"] - 1 <= 0:
+                pass
+    
+    if results:
+        send_daily_report()
+    
+    return {"processed": len(results), "results": results}
+
+def get_next_run_time() -> str:
+    now = datetime.now()
+    next_run = now.replace(hour=9, minute=0, second=0, microsecond=0)
+    
+    if now.hour >= 9:
+        next_run += timedelta(days=1)
+    
+    return next_run.isoformat()

@@ -1,5 +1,9 @@
 import os
 import json
+import asyncio
+import threading
+import time
+from datetime import datetime
 from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -7,7 +11,8 @@ from typing import Optional, List
 from campaign import (
     start_campaign, run_campaign_step, check_lead_response,
     search_and_import_leads, get_campaign_status, list_campaigns,
-    load_campaign, save_campaign, Campaign
+    load_campaign, save_campaign, Campaign,
+    send_daily_report, generate_daily_report, make_call, send_sms
 )
 
 app = FastAPI(title="Tvojton AI - Campaign API")
@@ -24,6 +29,7 @@ class StartCampaignRequest(BaseModel):
     target_segment: str
     monthly_limit: int = 50
     daily_limit: int = 10
+    calls_enabled: bool = False
 
 class SearchLeadsRequest(BaseModel):
     query: Optional[str] = None
@@ -31,6 +37,14 @@ class SearchLeadsRequest(BaseModel):
 class LeadResponseRequest(BaseModel):
     lead_url: str
     response_text: str
+
+class MakeCallRequest(BaseModel):
+    phone: str
+    script: str
+
+class SendSmsRequest(BaseModel):
+    phone: str
+    message: str
 
 @app.get("/")
 async def root():
@@ -57,9 +71,9 @@ async def api_start_campaign(req: StartCampaignRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/search_leads")
-async def api_search_leads(campaign_id: str, query: Optional[str] = None):
+async def api_search_leads(campaign_id: str, query: str = ""):
     try:
-        leads = await search_and_import_leads(campaign_id, query)
+        leads = await search_and_import_leads(campaign_id, query if query else None)
         return {
             "found": len(leads),
             "leads": [{"url": l.url, "email": l.email, "phone": l.phone, "company": l.company} for l in leads]
@@ -111,6 +125,43 @@ async def api_resume_campaign(campaign_id: str):
     campaign.status = "running"
     save_campaign(campaign)
     return {"message": "Kampaň obnovená", "status": "running"}
+
+@app.post("/call")
+async def api_make_call(req: MakeCallRequest):
+    try:
+        result = make_call(req.phone, req.script)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.post("/sms")
+async def api_send_sms(req: SendSmsRequest):
+    try:
+        result = send_sms(req.phone, req.message)
+        return result
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.get("/daily_report")
+async def api_daily_report():
+    report = generate_daily_report()
+    return {"report": report}
+
+@app.post("/send_daily_report")
+async def api_send_daily_report():
+    result = send_daily_report()
+    return result
+
+@app.post("/run_daily_step")
+async def api_run_daily_step():
+    from campaign import run_daily_campaign_step
+    result = await run_daily_campaign_step()
+    return result
+
+@app.get("/next_run")
+async def api_next_run():
+    from campaign import get_next_run_time
+    return {"next_run": get_next_run_time()}
 
 if __name__ == "__main__":
     import uvicorn

@@ -1,0 +1,17 @@
+{
+  "id": "camp_20260328_185710",
+  "target_segment": "e-shopy predavajuce rybarske potreby",
+  "monthly_limit": 50,
+  "daily_limit": 10,
+  "status": "running",
+  "leads_contacted": 0,
+  "leads_interested": 0,
+  "created_at": "2026-03-28T18:57:10.139878",
+  "last_run": "",
+  "telegram_enabled": true,
+  "calls_enabled": false,
+  "email_template": "",
+  "sms_template": "",
+  "call_script": "",
+  "admin_telegram": ""
+}
